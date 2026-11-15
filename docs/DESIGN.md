@@ -5,6 +5,7 @@ Companion docs:
 - [REPOSITORIES.md](REPOSITORIES.md): the `open-macaron` org, its repos, accounts, tokens and onboarding;
 - [ENGINEERING.md](ENGINEERING.md): stack, code layout, quality gates;
 - [DEPLOYMENT.md](DEPLOYMENT.md): supply chain, OpenShift deployment.
+- [MAINTAINER.md](MAINTAINER.md): proposal, macaron as a GitHub App maintaining repositories, runner in the repository.
 
 ## 1. Why
 
