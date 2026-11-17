@@ -3,11 +3,17 @@ import { parseYamlStrict, type PullContext, statusOf } from "@open-macaron/owner
 import { z } from "zod";
 
 /**
- * Settings a project's owners may not change on their own (SCALING.md §2): whose comments the
- * bot counts, and what it may spend or run on. Top-level in project.yaml and repos/*.yaml, and under a
- * project's `defaults`.
+ * Settings an org's owners may not change on their own (SCALING.md §2): whose comments the bot
+ * counts, and what it may spend or run on. In org.yaml at the top level, under `defaults` and under
+ * each `repos.<r>`; adding or removing a repository without them is the owners' call.
  */
 const RESERVED: readonly string[] = ["bots", "budget", "concurrency", "budgets", "caps", "reviewCost", "runsOn", "platforms"];
+
+/**
+ * Top-level keys reserved as a whole: which account the file trusts, and the fallback, which
+ * trusts every repository the org doesn't list.
+ */
+const RESERVED_TOP: readonly string[] = ["id", "fallback"];
 
 const Mapping = z.record(z.string(), z.unknown());
 
@@ -17,7 +23,7 @@ type Content = string | undefined | null;
 /** The reserved settings of a configuration file's content, canonical; undefined when it can't be read as a mapping. */
 function reservedOf(source: Content): string | undefined {
   if (source === null) return undefined;
-  if (source === undefined) return canonical({ top: {}, defaults: {} });
+  if (source === undefined) return canonical({ top: {}, defaults: {}, repos: {} });
   let parsed: unknown;
   try {
     parsed = parseYamlStrict(source);
@@ -27,9 +33,18 @@ function reservedOf(source: Content): string | undefined {
   const root = Mapping.safeParse(parsed ?? {});
   if (!root.success) return undefined;
   const defaults = Mapping.safeParse(root.data["defaults"] ?? {});
-  if (!defaults.success) return undefined;
-  const pick = (mapping: Readonly<Record<string, unknown>>) => Object.fromEntries(RESERVED.filter((key) => key in mapping).map((key) => [key, mapping[key]]));
-  return canonical({ top: pick(root.data), defaults: pick(defaults.data) });
+  const repos = Mapping.safeParse(root.data["repos"] ?? {});
+  if (!defaults.success || !repos.success) return undefined;
+  const pick = (mapping: Readonly<Record<string, unknown>>, keys: readonly string[]) => Object.fromEntries(keys.filter((key) => key in mapping).map((key) => [key, mapping[key]]));
+  const entries: [string, Record<string, unknown>][] = [];
+  for (const [name, entry] of Object.entries(repos.data)) {
+    const settings = Mapping.safeParse(entry ?? {});
+    if (!settings.success) return undefined;
+    const reserved = pick(settings.data, RESERVED);
+    // A repository without reserved settings is the same as no repository: listing it is the owners' call.
+    if (Object.keys(reserved).length > 0) entries.push([name.toLowerCase(), reserved]);
+  }
+  return canonical({ top: pick(root.data, [...RESERVED, ...RESERVED_TOP]), defaults: pick(defaults.data, RESERVED), repos: Object.fromEntries(entries) });
 }
 
 /** JSON with sorted keys: YAML key order isn't a change. */
@@ -56,7 +71,7 @@ export function changesReserved(before: Content, after: Content): boolean {
 }
 
 /**
- * `MergePolicy.platformPaths` for open-macaron/config: the PR's project and repository files whose
+ * `MergePolicy.platformPaths` for open-macaron/config: the PR's org files whose
  * reserved settings differ between the default branch and the PR's head. The head's content only
  * ever makes a PR stricter to merge, so reading it here is safe.
  */

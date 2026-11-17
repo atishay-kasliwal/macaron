@@ -7,14 +7,14 @@ import { folderOf, isRepositoryFile } from "./layout.ts";
 export interface ConfigRepository {
   /** The configuration's files, keyed by repository-relative path: what is published. */
   readonly files: ReadonlyMap<string, string>;
-  /** Each project folder with its owners (undefined when its OWNERS.yaml is missing or invalid). */
+  /** Each org folder with its owners (undefined when its OWNERS.yaml is missing or invalid). */
   readonly folders: readonly { readonly path: string; readonly owners: OwnersFile | undefined }[];
   readonly problems: readonly Problem[];
 }
 
 /**
  * Loads open-macaron/config from `dir` and validates it: the configuration exactly as the
- * controller does (parseConfigTree), each project folder's OWNERS.yaml, and nothing else in the tree.
+ * controller does (parseConfigTree), each org folder's OWNERS.yaml, and nothing else in the tree.
  */
 export async function loadRepository(dir: string): Promise<ConfigRepository> {
   const problems: Problem[] = [];
@@ -30,13 +30,18 @@ export async function loadRepository(dir: string): Promise<ConfigRepository> {
     } else if (folder !== undefined && path === `${folder.path}/OWNERS.yaml`) {
       owners.set(folder.path, ownersFile(path, await readFile(join(dir, path), "utf8"), problems));
     } else {
-      problems.push({ path, message: "not part of the configuration (global.yaml, projects/<p>/{OWNERS.yaml,project.yaml,repos/<r>.yaml})" });
+      problems.push({
+        path,
+        message: path.startsWith("projects/")
+          ? "projects are gone: configure the repository in orgs/<org>/org.yaml"
+          : "not part of the configuration (global.yaml, orgs/<org>/{OWNERS.yaml,org.yaml})",
+      });
     }
   }
 
   for (const [folder, file] of owners) {
     if (file === undefined && !problems.some((problem) => problem.path === `${folder}/OWNERS.yaml`)) {
-      problems.push({ path: `${folder}/OWNERS.yaml`, message: "missing: every project folder needs owners" });
+      problems.push({ path: `${folder}/OWNERS.yaml`, message: "missing: every org folder needs owners" });
     }
   }
 

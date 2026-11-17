@@ -1,4 +1,4 @@
-import { cp, mkdtemp, rm, writeFile, readFile } from "node:fs/promises";
+import { cp, mkdir, mkdtemp, rm, writeFile, readFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { CommitSha, loadConfigTree, parseConfigTree, PublishedConfig } from "@open-macaron/contracts";
@@ -8,6 +8,7 @@ import { loadRepository } from "../src/tree.ts";
 
 const committedConfig = join(import.meta.dirname, "..", "..", "contracts", "test", "fixtures", "config");
 const OWNERS = "owners:\n  - login: axel7083\n    id: 42176370\n";
+const ORGS = ["axel7083", "crc-org", "podman-desktop", "redhat-developer"];
 
 let dir: string | undefined;
 afterEach(async () => {
@@ -15,12 +16,12 @@ afterEach(async () => {
   dir = undefined;
 });
 
-/** macaron's config/ laid out as open-macaron/config: each project folder with its OWNERS.yaml. */
+/** macaron's config/ laid out as open-macaron/config: each org folder with its OWNERS.yaml. */
 async function repository(extra: Readonly<Record<string, string>> = {}): Promise<string> {
   const root = await mkdtemp(join(tmpdir(), "config-repo-"));
   dir = root;
   await cp(committedConfig, root, { recursive: true });
-  for (const project of ["podman-desktop", "podman-desktop-extensions", "sandbox"]) await writeFile(join(root, "projects", project, "OWNERS.yaml"), OWNERS);
+  for (const org of ORGS) await writeFile(join(root, "orgs", org, "OWNERS.yaml"), OWNERS);
   await writeFile(join(root, "README.md"), "# config\n");
   for (const [path, content] of Object.entries(extra)) await writeFile(join(root, path), content);
   return root;
@@ -31,20 +32,24 @@ describe("loadRepository", () => {
     const loaded = await loadRepository(await repository());
 
     expect(loaded.problems).toEqual([]);
-    expect(loaded.folders.map((folder) => folder.path)).toEqual(["projects/podman-desktop", "projects/podman-desktop-extensions", "projects/sandbox"]);
+    expect(loaded.folders.map((folder) => folder.path)).toEqual(ORGS.map((org) => `orgs/${org}`));
     expect(parseConfigTree(loaded.files)).toEqual(await loadConfigTree(committedConfig));
   });
 
   it("reports stray files, missing owners and invalid configuration with their paths", async () => {
     const root = await repository({ "notes.txt": "x" });
-    await rm(join(root, "projects", "sandbox", "OWNERS.yaml"));
-    await writeFile(join(root, "projects", "sandbox", "repos", "broken.yaml"), "repo: not a slug\n");
+    await rm(join(root, "orgs", "axel7083", "OWNERS.yaml"));
+    await writeFile(join(root, "orgs", "crc-org", "org.yaml"), "org: crc-org\n");
+    await mkdir(join(root, "projects", "sandbox"), { recursive: true });
+    await writeFile(join(root, "projects", "sandbox", "project.yaml"), "project: sandbox\n");
 
-    const paths = (await loadRepository(root)).problems.map((problem) => problem.path);
+    const problems = (await loadRepository(root)).problems;
+    const paths = problems.map((problem) => problem.path);
 
     expect(paths).toContain("notes.txt");
-    expect(paths).toContain("projects/sandbox/OWNERS.yaml");
-    expect(paths).toContain("projects/sandbox/repos/broken.yaml");
+    expect(paths).toContain("orgs/axel7083/OWNERS.yaml");
+    expect(paths).toContain("orgs/crc-org/org.yaml");
+    expect(problems).toContainEqual({ path: "projects/sandbox/project.yaml", message: "projects are gone: configure the repository in orgs/<org>/org.yaml" });
   });
 });
 
@@ -61,7 +66,7 @@ describe("publish", () => {
 
     expect(await readFile(join(root, "out", "v1", "config.json"), "utf8")).toBe(first);
     expect(snapshot.commit).toBe(commit);
-    expect(Object.keys(snapshot.files)).not.toContain("projects/sandbox/OWNERS.yaml");
+    expect(Object.keys(snapshot.files)).not.toContain("orgs/axel7083/OWNERS.yaml");
     expect(parseConfigTree(new Map(Object.entries(snapshot.files)))).toEqual(await loadConfigTree(committedConfig));
   });
 });
