@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { GlobalFile, ProjectFile, RepoFile, platformsOf, resolveRepoConfig, runnerFor } from "../src/index.ts";
+import { GlobalFile, OrgFile, type RepoConfig, RepoSettingsPatch, RepoSlug, platformsOf, resolveRepoConfig, runnerFor } from "../src/index.ts";
 
 const global = GlobalFile.parse({
   defaults: {
@@ -22,8 +22,9 @@ const global = GlobalFile.parse({
   platformTeam: "@open-macaron/maintainers",
 });
 
-const project = ProjectFile.parse({
-  project: "podman-desktop",
+const org = OrgFile.parse({
+  org: "podman-desktop",
+  id: 129859460,
   owners: "@open-macaron/podman-desktop",
   budget: { monthUsd: 300 },
   concurrency: 4,
@@ -33,49 +34,70 @@ const project = ProjectFile.parse({
   },
 });
 
+/** `entry` as the org's listing of `name`, resolved for `podman-desktop/<name>`. */
+function resolve(entry: unknown, name = "extension-a", base: OrgFile = org): RepoConfig | undefined {
+  return resolveRepoConfig(global, { ...base, repos: { ...base.repos, [name]: RepoSettingsPatch.parse(entry) } }, RepoSlug.parse(`podman-desktop/${name}`));
+}
+
 describe("resolveRepoConfig", () => {
-  it("inherits project defaults and merges objects key by key", () => {
-    const repo = RepoFile.parse({ repo: "podman-desktop/extension-a", budgets: { implement: 8 } });
+  it("inherits the org's defaults and merges objects key by key", () => {
+    const config = resolve({ budgets: { implement: 8 } });
 
-    const config = resolveRepoConfig(global, project, repo);
-
-    expect(config.environment).toEqual({
+    expect(config?.environment).toEqual({
       source: "shared",
       name: "pd-extension",
       params: { host: "podman-desktop/podman-desktop", hostRef: "auto" },
     });
-    expect(config.budgets.implement).toBe(8);
-    expect(config.budgets.plan).toBe(1);
-    expect(resolveRepoConfig(global, project, RepoFile.parse({ ...repo, reviewCost: { perRuleUsd: 0.06 } })).reviewCost).toEqual({ baseUsd: 0.1, perRuleUsd: 0.06 });
-    expect(config.contribution).toEqual({ dco: true, fixCi: false });
+    expect(config?.budgets.implement).toBe(8);
+    expect(config?.budgets.plan).toBe(1);
+    expect(resolve({ reviewCost: { perRuleUsd: 0.06 } })?.reviewCost).toEqual({ baseUsd: 0.1, perRuleUsd: 0.06 });
+    expect(config?.contribution).toEqual({ dco: true, fixCi: false });
+    expect(config).toMatchObject({ org: "podman-desktop", orgId: 129859460, knowledge: "podman-desktop", fallback: false });
   });
 
-  it("ignores a fork named by the file: the controller owns the bot's forks", () => {
-    const config = resolveRepoConfig(global, project, RepoFile.parse({ repo: "podman-desktop/extension-a", fork: "macaron-bot/knowledge" }));
+  it("matches a listed repository case-insensitively, under the caller's owner login", () => {
+    const listed = { ...org, repos: { "Extension-A": {} } };
 
-    expect(config).not.toHaveProperty("fork");
+    expect(resolveRepoConfig(global, listed, RepoSlug.parse("renamed-org/extension-a"))).toMatchObject({ repo: "renamed-org/extension-a", org: "podman-desktop", fallback: false });
   });
 
-  it("is compact unless a project or a repository says otherwise", () => {
-    const repo = RepoFile.parse({ repo: "podman-desktop/extension-c" });
-    const verbose = ProjectFile.parse({ ...project, defaults: { ...project.defaults, compact: false } });
+  it("takes no repository the org doesn't list, unless it has a fallback", () => {
+    expect(resolveRepoConfig(global, org, RepoSlug.parse("podman-desktop/unknown"))).toBeUndefined();
 
-    expect(resolveRepoConfig(global, project, repo).compact).toBe(true);
-    expect(resolveRepoConfig(global, verbose, repo).compact).toBe(false);
-    expect(resolveRepoConfig(global, verbose, RepoFile.parse({ ...repo, compact: true })).compact).toBe(true);
-    expect(() => RepoFile.parse({ ...repo, compact: "yes" })).toThrow(/compact/);
+    const open = OrgFile.parse({ ...org, fallback: { budget: { monthUsd: 10 }, environment: { source: "shared", name: "generic", params: {} }, caps: { perRepoMonthUsd: 5 } } });
+    const config = resolveRepoConfig(global, open, RepoSlug.parse("podman-desktop/unknown"));
+
+    expect(config).toMatchObject({ fallback: true, environment: { source: "shared", name: "generic", params: {} }, caps: { perRepoMonthUsd: 5, perThreadUsd: 20 } });
+    expect(config).not.toHaveProperty("budget");
+    // A listed repository never falls back.
+    expect(resolve({}, "extension-a", open)?.fallback).toBe(false);
+  });
+
+  it("takes the knowledge folder from the settings, the org's login otherwise", () => {
+    expect(resolve({ knowledge: "podman-desktop-extensions" })?.knowledge).toBe("podman-desktop-extensions");
+    expect(resolve({}, "extension-a", OrgFile.parse({ ...org, defaults: { ...org.defaults, knowledge: "pd" } }))?.knowledge).toBe("pd");
+  });
+
+  it("is compact unless the org or a repository says otherwise", () => {
+    const verbose = OrgFile.parse({ ...org, defaults: { ...org.defaults, compact: false } });
+
+    expect(resolve({})?.compact).toBe(true);
+    expect(resolve({}, "extension-c", verbose)?.compact).toBe(false);
+    expect(resolve({ compact: true }, "extension-c", verbose)?.compact).toBe(true);
+    expect(() => RepoSettingsPatch.parse({ compact: "yes" })).toThrow(/compact/);
   });
 
   it("refuses a users list: who may trigger the bot is an account of the web app", () => {
-    expect(() => ProjectFile.parse({ ...project, users: ["axel7083"] })).toThrow(/users/);
+    expect(() => OrgFile.parse({ ...org, users: ["axel7083"] })).toThrow(/users/);
+  });
+
+  it("refuses a fallback without its pooled budget", () => {
+    expect(OrgFile.safeParse({ ...org, fallback: { environment: { source: "shared", name: "generic", params: {} } } }).success).toBe(false);
+    expect(OrgFile.parse({ ...org, fallback: false }).fallback).toBe(false);
   });
 
   it("overrides a single shared parameter without dropping the others", () => {
-    const repo = RepoFile.parse({ repo: "podman-desktop/extension-b", environment: { params: { hostRef: "v1.22.0" } } });
-
-    const config = resolveRepoConfig(global, project, repo);
-
-    expect(config.environment).toEqual({
+    expect(resolve({ environment: { params: { hostRef: "v1.22.0" } } }, "extension-b")?.environment).toEqual({
       source: "shared",
       name: "pd-extension",
       params: { host: "podman-desktop/podman-desktop", hostRef: "v1.22.0" },
@@ -83,57 +105,51 @@ describe("resolveRepoConfig", () => {
   });
 
   it("starts the environment from scratch when the source changes", () => {
-    const repo = RepoFile.parse({
-      repo: "podman-desktop/podman-desktop",
-      environment: { source: "upstream", path: ".github/macaron/env" },
+    expect(resolve({ environment: { source: "upstream", path: ".github/macaron/env" } }, "podman-desktop")?.environment).toEqual({
+      source: "upstream",
+      path: ".github/macaron/env",
+      params: {},
     });
-
-    const config = resolveRepoConfig(global, project, repo);
-
-    expect(config.environment).toEqual({ source: "upstream", path: ".github/macaron/env", params: {} });
   });
 
   it("rejects an incomplete environment with a precise path", () => {
-    const repo = RepoFile.parse({ repo: "podman-desktop/podman-desktop", environment: { source: "upstream" } });
-
-    expect(() => resolveRepoConfig(global, project, repo)).toThrow(/path/);
+    expect(() => resolve({ environment: { source: "upstream" } }, "podman-desktop")).toThrow(/path/);
   });
 
   it("rejects upstream paths outside .github/macaron", () => {
-    expect(RepoFile.safeParse({ repo: "a/b", environment: { source: "upstream", path: ".github/macaron/../../x" } }).success).toBe(false);
-    expect(RepoFile.safeParse({ repo: "a/b", environment: { source: "upstream", path: "scripts/env" } }).success).toBe(false);
+    expect(RepoSettingsPatch.safeParse({ environment: { source: "upstream", path: ".github/macaron/../../x" } }).success).toBe(false);
+    expect(RepoSettingsPatch.safeParse({ environment: { source: "upstream", path: "scripts/env" } }).success).toBe(false);
   });
 
   it("merges per-mode model overrides and rejects unknown modes", () => {
-    const repo = RepoFile.parse({ repo: "podman-desktop/extension-a", models: { implement: "anthropic/claude-opus-5.5" } });
-    const config = resolveRepoConfig(global, project, repo);
-
-    expect(config.models).toEqual({ review: "anthropic/claude-haiku-5.5", implement: "anthropic/claude-opus-5.5" });
-    expect(RepoFile.safeParse({ repo: "o/r", models: { reviw: "m" } }).success).toBe(false);
+    expect(resolve({ models: { implement: "anthropic/claude-opus-5.5" } })?.models).toEqual({ review: "anthropic/claude-haiku-5.5", implement: "anthropic/claude-opus-5.5" });
+    expect(RepoSettingsPatch.safeParse({ models: { reviw: "m" } }).success).toBe(false);
   });
 
   it("runs on Linux by default, and on the other platforms a level enables", () => {
-    const linuxOnly = resolveRepoConfig(global, project, RepoFile.parse({ repo: "podman-desktop/extension-a" }));
+    const linuxOnly = resolve({});
+    if (linuxOnly === undefined) throw new Error("not resolved");
     expect(runnerFor(linuxOnly, "linux")).toBe("ubuntu-24.04");
     expect(runnerFor(linuxOnly, "windows")).toBeUndefined();
     expect(platformsOf(linuxOnly)).toEqual(["linux"]);
 
-    const withWindows = resolveRepoConfig(
-      global,
-      ProjectFile.parse({ ...project, defaults: { ...project.defaults, platforms: { windows: { runsOn: "windows-2022" } } } }),
-      RepoFile.parse({ repo: "podman-desktop/extension-a", platforms: { windows: { runsOn: "windows-2025" } } }),
+    const withWindows = resolve(
+      { platforms: { windows: { runsOn: "windows-2025" } } },
+      "extension-a",
+      OrgFile.parse({ ...org, defaults: { ...org.defaults, platforms: { windows: { runsOn: "windows-2022" } } } }),
     );
+    if (withWindows === undefined) throw new Error("not resolved");
     expect(runnerFor(withWindows, "windows")).toBe("windows-2025");
     expect(platformsOf(withWindows)).toEqual(["linux", "windows"]);
   });
 
   it("rejects Linux under platforms and platforms without a runner", () => {
-    expect(RepoFile.safeParse({ repo: "a/b", platforms: { linux: { runsOn: "ubuntu-24.04" } } }).success).toBe(false);
-    const repo = RepoFile.parse({ repo: "a/b", platforms: { windows: {} } });
-    expect(() => resolveRepoConfig(global, project, repo)).toThrow(/runsOn/);
+    expect(RepoSettingsPatch.safeParse({ platforms: { linux: { runsOn: "ubuntu-24.04" } } }).success).toBe(false);
+    expect(() => resolve({ platforms: { windows: {} } })).toThrow(/runsOn/);
   });
 
   it("rejects unknown keys so typos never pass silently", () => {
-    expect(RepoFile.safeParse({ repo: "a/b", budget: { implement: 1 } }).success).toBe(false);
+    expect(RepoSettingsPatch.safeParse({ budget: { implement: 1 } }).success).toBe(false);
+    expect(OrgFile.safeParse({ ...org, repos: { "a/b": {} } }).success).toBe(false);
   });
 });

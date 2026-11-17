@@ -1,9 +1,0 @@
-# yaml-language-server: $schema=../../../../../../schemas/config-repo.schema.json
-#
-# podman-desktop/extension-kubernetes-contexts.
-
-repo: podman-desktop/extension-kubernetes-contexts
-commands:
-  build: pnpm build
-  test: pnpm test
-  lint: pnpm lint:check

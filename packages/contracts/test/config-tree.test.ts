@@ -13,14 +13,17 @@ describe("a realistic configuration tree", () => {
 
     expect(snapshot.repos.get("axel7083/foobar-tmp-demo")?.budgets.implement).toBe(2);
     expect(snapshot.repos.get("podman-desktop/extension-podman-quadlet")).toMatchObject({
-      project: "podman-desktop-extensions",
+      org: "podman-desktop",
+      knowledge: "podman-desktop-extensions",
       runsOn: "ubuntu-26.04",
       environment: { source: "shared", name: "podman-desktop-extensions" },
       models: { review: "claude-sonnet-5-5" },
       contribution: { dco: true },
+      fallback: false,
     });
     expect(snapshot.repos.get("podman-desktop/podman-desktop")).toMatchObject({
-      project: "podman-desktop",
+      org: "podman-desktop",
+      knowledge: "podman-desktop",
       environment: { source: "shared", name: "podman-desktop", params: { machine: "true" } },
       budgets: { review: 1, implement: 5, verify: 4 },
       reviewCost: { baseUsd: 0.1, perRuleUsd: 0.04 },
@@ -28,12 +31,14 @@ describe("a realistic configuration tree", () => {
     });
     // The test fork shares the bot's fork with upstream, and runs Podman Desktop built from it.
     expect(snapshot.repos.get("axel7083/podman-desktop")).toMatchObject({
-      project: "podman-desktop",
+      org: "axel7083",
+      knowledge: "podman-desktop",
       environment: { source: "shared", name: "podman-desktop", params: { machine: "true" } },
       platforms: { windows: { runsOn: "windows-2025" } },
     });
     expect(snapshot.repos.get("podman-desktop/podman-desktop")?.platforms).toEqual({});
-    expect(snapshot.repoFiles.get("axel7083/podman-desktop")).toBe("projects/podman-desktop/repos/axel7083-podman-desktop.yaml");
+    expect(snapshot.orgFiles.get(42176370)).toBe("orgs/axel7083/org.yaml");
+    expect(snapshot.orgs.get(129859460)?.fallback).toMatchObject({ budget: { monthUsd: 10 }, environment: { name: "generic" } });
     expect(snapshot.repos.get("podman-desktop/podman-desktop")?.compact).toBe(true);
     expect(snapshot.repos.get("axel7083/podman-desktop")?.compact).toBe(false);
   });
@@ -57,7 +62,7 @@ describe("loadConfigTree", () => {
     return root;
   }
 
-  const project = (name: string) => `project: ${name}\nowners: "@o/t"\nbudget: { monthUsd: 10 }\nconcurrency: 1\n`;
+  const org = (name: string, id = 1) => `org: ${name}\nid: ${String(id)}\nowners: "@o/t"\nbudget: { monthUsd: 10 }\nconcurrency: 1\n`;
 
   async function problems(files: Readonly<Record<string, string>>): Promise<readonly string[]> {
     const root = await tree({ "global.yaml": await globalYaml(), ...files });
@@ -77,42 +82,44 @@ describe("loadConfigTree", () => {
 
   it("reports every problem with its file, not just the first", async () => {
     const found = await problems({
-      "projects/a/project.yaml": project("a"),
-      "projects/a/repos/x.yaml": "repo: o/x\nbudgets: { implement: -1 }\n",
-      "projects/a/repos/y.yaml": "repo: o/y\nunknownKey: true\n",
+      "orgs/a/org.yaml": `${org("a")}repos:\n  x: { budgets: { implement: -1 } }\n  y: { unknownKey: true }\n`,
+      "orgs/b/org.yaml": `${org("b", 2)}fallback: { budget: { monthUsd: 1 }, environment: { source: upstream } }\n`,
     });
 
-    expect(found).toHaveLength(2);
-    expect(found.some((problem) => problem.startsWith("projects/a/repos/x.yaml: budgets.implement"))).toBe(true);
-    expect(found.some((problem) => problem.startsWith("projects/a/repos/y.yaml"))).toBe(true);
+    expect(found).toHaveLength(3);
+    expect(found.some((problem) => problem.startsWith("orgs/a/org.yaml: repos.x.budgets.implement"))).toBe(true);
+    expect(found.some((problem) => problem.startsWith("orgs/a/org.yaml: repos.y"))).toBe(true);
+    expect(found.some((problem) => problem.startsWith("orgs/b/org.yaml: fallback: after merging defaults: environment.path"))).toBe(true);
   });
 
-  it("rejects a repository configured by two projects, case-insensitively", async () => {
-    const found = await problems({
-      "projects/a/project.yaml": project("a"),
-      "projects/a/repos/x.yaml": "repo: Org/Repo\n",
-      "projects/b/project.yaml": project("b"),
-      "projects/b/repos/x.yaml": "repo: org/repo\n",
-    });
-
-    expect(found).toEqual([expect.stringContaining('already configured by project "a"')]);
+  it("rejects an account configured twice, by id or by login", async () => {
+    expect(await problems({ "orgs/a/org.yaml": org("a", 7), "orgs/b/org.yaml": org("b", 7) })).toEqual([
+      "orgs/b/org.yaml: account 7 is already configured by orgs/a/org.yaml",
+    ]);
+    expect(await problems({ "orgs/A/org.yaml": org("A", 1), "orgs/a/org.yaml": org("a", 2) })).toEqual([expect.stringContaining("a is already configured")]);
   });
 
-  it("rejects a project living in a folder with another name", async () => {
-    const found = await problems({ "projects/a/project.yaml": project("b") });
+  it("rejects an org living in a folder with another name", async () => {
+    const found = await problems({ "orgs/a/org.yaml": org("b") });
 
-    expect(found).toEqual([expect.stringContaining("must live in projects/b/")]);
+    expect(found).toEqual([expect.stringContaining("must live in orgs/b/")]);
+  });
+
+  it("refuses a leftover projects/ tree, pointing to orgs/", async () => {
+    const found = await problems({ "projects/a/project.yaml": "project: a\n" });
+
+    expect(found).toEqual(["projects/a/project.yaml: projects are gone: configure the repository in orgs/<org>/org.yaml"]);
   });
 
   it("rejects duplicate YAML keys", async () => {
-    const found = await problems({ "projects/a/project.yaml": `${project("a")}concurrency: 2\n` });
+    const found = await problems({ "orgs/a/org.yaml": `${org("a")}concurrency: 2\n` });
 
-    expect(found).toEqual([expect.stringContaining("projects/a/project.yaml")]);
+    expect(found).toEqual([expect.stringContaining("orgs/a/org.yaml")]);
   });
 });
 
 describe("parseConfigTree", () => {
-  const project = `project: a\nowners: "@o/t"\nbudget: { monthUsd: 10 }\nconcurrency: 1\n`;
+  const org = `org: a\nid: 1\nowners: "@o/t"\nbudget: { monthUsd: 10 }\nconcurrency: 1\n`;
 
   function problems(files: Readonly<Record<string, string>>): readonly string[] {
     try {
@@ -133,16 +140,13 @@ describe("parseConfigTree", () => {
   it("rejects files outside the layout", async () => {
     const global = (await readConfigFiles(repoConfigDir)).get("global.yaml") ?? "";
 
-    expect(problems({ "global.yaml": global, "projects/a/project.yaml": project, "projects/a/notes.md": "x", "README.md": "x" })).toEqual([
+    expect(problems({ "global.yaml": global, "orgs/a/org.yaml": org, "orgs/a/notes.md": "x", "README.md": "x" })).toEqual([
       expect.stringMatching(/^README\.md: not a configuration file/),
-      expect.stringMatching(/^projects\/a\/notes\.md: not a configuration file/),
+      expect.stringMatching(/^orgs\/a\/notes\.md: not a configuration file/),
     ]);
   });
 
-  it("reports a repository whose project file is missing, and a missing global.yaml", () => {
-    expect(problems({ "projects/a/repos/x.yaml": "repo: o/x\n" })).toEqual([
-      "global.yaml: missing",
-      "projects/a/project.yaml: missing",
-    ]);
+  it("reports a missing global.yaml", () => {
+    expect(problems({ "orgs/a/org.yaml": org })).toEqual(["global.yaml: missing"]);
   });
 });

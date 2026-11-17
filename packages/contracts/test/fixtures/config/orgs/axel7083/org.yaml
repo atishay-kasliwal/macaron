@@ -1,0 +1,45 @@
+# yaml-language-server: $schema=../../../../../schemas/config-org.schema.json
+#
+# axel7083: a user account, for the sandbox and a fork of Podman Desktop the bot shares with upstream.
+
+org: axel7083
+id: 42176370
+owners: "@open-macaron/maintainers"
+budget:
+  monthUsd: 50.00
+concurrency: 1
+defaults:
+  runsOn: ubuntu-26.04
+repos:
+  # A throwaway upstream, to exercise the whole loop.
+  foobar-tmp-demo:
+    knowledge: sandbox
+    runsOn: ubuntu-24.04
+    budgets:
+      implement: 2.00
+      address_review: 1.50
+    commands:
+      build: npm run build
+  # Runs Podman Desktop built from the fork, on Linux and Windows.
+  podman-desktop:
+    knowledge: podman-desktop
+    timeoutMinutes: 75
+    compact: false
+    environment:
+      source: shared
+      name: podman-desktop
+      params:
+        machine: "true"
+    platforms:
+      windows:
+        runsOn: windows-2025
+    budgets:
+      plan: 1.00
+      reproduce: 4.00
+      verify: 4.00
+    commands:
+      build: pnpm build
+      test: pnpm test:unit
+      lint: pnpm lint:check
+    contribution:
+      dco: true

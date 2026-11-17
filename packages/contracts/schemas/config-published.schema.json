@@ -14,7 +14,7 @@
       "type": "object",
       "propertyNames": {
         "type": "string",
-        "pattern": "^(?:global\\.yaml|projects\\/[a-z0-9]+(?:-[a-z0-9]+)*\\/(?:project\\.yaml|repos\\/[A-Za-z0-9._-]{1,100}\\.ya?ml))$"
+        "pattern": "^(?:global\\.yaml|orgs\\/[A-Za-z0-9-]{1,39}\\/org\\.yaml)$"
       },
       "additionalProperties": {
         "type": "string",

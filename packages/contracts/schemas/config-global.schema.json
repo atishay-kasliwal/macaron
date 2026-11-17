@@ -319,6 +319,11 @@
             "fixCi"
           ],
           "additionalProperties": false
+        },
+        "knowledge": {
+          "type": "string",
+          "maxLength": 64,
+          "pattern": "^[a-z0-9]+(-[a-z0-9]+)*$"
         }
       },
       "required": [

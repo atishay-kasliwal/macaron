@@ -1,0 +1,71 @@
+# yaml-language-server: $schema=../../../../../schemas/config-org.schema.json
+#
+# podman-desktop: Podman Desktop itself, its extensions and their catalog. Repositories it doesn't
+# list run in the generic environment, on a budget of their own.
+
+org: podman-desktop
+id: 129859460
+owners: "@open-macaron/maintainers"
+bots: []
+budget:
+  monthUsd: 60.00
+concurrency: 2
+defaults:
+  runsOn: ubuntu-26.04
+  timeoutMinutes: 45
+  knowledge: podman-desktop-extensions
+  environment:
+    source: shared
+    name: podman-desktop-extensions
+    params: {}
+  budgets:
+    implement: 5.00
+    reproduce: 3.00
+    verify: 3.00
+    address_review: 2.00
+    review: 0.50
+  # The DCO check runs on these repositories' pull requests.
+  contribution:
+    dco: true
+repos:
+  podman-desktop:
+    knowledge: podman-desktop
+    timeoutMinutes: 75
+    environment:
+      source: shared
+      name: podman-desktop
+      params:
+        machine: "true"
+    budgets:
+      reproduce: 3.00
+      verify: 4.00
+      review: 1.00
+    commands:
+      build: pnpm build
+      test: pnpm test:unit
+      lint: pnpm lint:check
+  extension-grype:
+    commands: { build: pnpm build, test: pnpm test:unit, lint: pnpm lint:check }
+  extension-kreate:
+    commands: { build: pnpm build, test: pnpm test:unit, lint: pnpm lint:check }
+  extension-kubernetes-contexts:
+    commands: { build: pnpm build, test: pnpm test, lint: pnpm lint:check }
+  extension-kubernetes-dashboard:
+    commands: { build: pnpm build, test: pnpm test, lint: pnpm lint:check }
+  extension-layers-explorer:
+    commands: { build: pnpm build, test: pnpm test, lint: pnpm lint:check }
+  extension-minikube:
+    commands: { build: pnpm build, test: pnpm test, lint: pnpm lint:check }
+  extension-podman-quadlet:
+    commands: { build: pnpm build, test: pnpm test:unit, lint: pnpm lint:check }
+  extension-postgresql:
+    commands: { build: pnpm build, test: pnpm test:unit, lint: pnpm lint:check }
+fallback:
+  budget:
+    monthUsd: 10.00
+  environment:
+    source: shared
+    name: generic
+    params: {}
+  caps:
+    perRepoMonthUsd: 5.00
