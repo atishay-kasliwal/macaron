@@ -29,7 +29,7 @@ export const navigation: readonly NavSection[] = [
     items: [
       { title: "Overview", route: "/(app)", icon: GaugeIcon },
       { title: "Usage", route: "/(app)/usage", icon: ChartColumnIcon },
-      { title: "Projects", route: "/(app)/projects", icon: FolderGit2Icon },
+      { title: "Organisations", route: "/(app)/orgs", icon: FolderGit2Icon },
     ],
   },
   {

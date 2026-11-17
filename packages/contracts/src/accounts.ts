@@ -373,21 +373,23 @@ export type LlmKeyEvents = z.infer<typeof LlmKeyEvents>;
 export const LlmKeyEventsQuery = UsageQuery;
 export type LlmKeyEventsQuery = z.infer<typeof LlmKeyEventsQuery>;
 
-/** A configured repository (or a project without any), as every signed-in user may see it: never its settings. */
-export const ProjectRow = z.object({
-  project: z.string(),
-  /** Null for a project that has no repository yet. */
+/** A repository the bot works on (or an org without any), as every signed-in user may see it: never its settings. */
+export const OrgRow = z.object({
+  org: z.string(),
+  /** Null for an org that lists no repository and has no fallback repository onboarded yet. */
   repo: RepoSlug.nullable(),
-  /** The bot's fork once it is ready; null means the bot still refuses requests on `repo`. */
+  /** The bot's fork once it is ready; null means the bot can't work on `repo` yet. */
   fork: RepoSlug.nullable(),
+  /** Configured by the org's fallback: onboarded on its first request, not listed. */
+  fallback: z.boolean(),
 });
-export type ProjectRow = z.infer<typeof ProjectRow>;
+export type OrgRow = z.infer<typeof OrgRow>;
 
-export const ProjectsPage = z.object({ rows: z.array(ProjectRow), nextCursor: z.string().nullable() });
-export type ProjectsPage = z.infer<typeof ProjectsPage>;
+export const OrgsPage = z.object({ rows: z.array(OrgRow), nextCursor: z.string().nullable() });
+export type OrgsPage = z.infer<typeof OrgsPage>;
 
-export const ProjectsQuery = z.object({
+export const OrgsQuery = z.object({
   after: z.string().max(200).optional(),
   limit: z.coerce.number().int().min(1).max(100).default(25),
 });
-export type ProjectsQuery = z.infer<typeof ProjectsQuery>;
+export type OrgsQuery = z.infer<typeof OrgsQuery>;

@@ -6,7 +6,7 @@ const CONTROLLER = `http://127.0.0.1:${String(PORTS.controller)}`;
 /** Who the browser is signed in as: the fake controller knows `octocat` (admin) and `defunkt`. */
 export type SignedInAs = "octocat" | "defunkt" | undefined;
 
-export const test = base.extend<{ signIn: (as: SignedInAs) => Promise<Page>; renewals: () => Promise<number>; breakProjects: () => Promise<void>; forgetOnboarding: (as: "octocat" | "defunkt") => Promise<void> }>({
+export const test = base.extend<{ signIn: (as: SignedInAs) => Promise<Page>; renewals: () => Promise<number>; breakOrgs: () => Promise<void>; forgetOnboarding: (as: "octocat" | "defunkt") => Promise<void> }>({
   signIn: async ({ page, context }, use) => {
     await fetch(`${CONTROLLER}/__reset`, { method: "POST" });
     const errors: string[] = [];
@@ -25,9 +25,9 @@ export const test = base.extend<{ signIn: (as: SignedInAs) => Promise<Page>; ren
   },
   // Playwright reads a fixture's dependencies from this destructuring: this one has none.
   // eslint-disable-next-line no-empty-pattern
-  breakProjects: async ({}, use) => {
+  breakOrgs: async ({}, use) => {
     await use(async () => {
-      await fetch(`${CONTROLLER}/__break-projects`, { method: "POST" });
+      await fetch(`${CONTROLLER}/__break-orgs`, { method: "POST" });
     });
   },
   // Playwright reads a fixture's dependencies from this destructuring: this one has none.

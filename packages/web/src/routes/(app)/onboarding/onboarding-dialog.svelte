@@ -13,7 +13,7 @@
   import StepHow from "./step-how.svelte";
   import StepKey from "./step-key.svelte";
   import StepLinks from "./step-links.svelte";
-  import StepProject from "./step-project.svelte";
+  import StepOrg from "./step-org.svelte";
 
   let { onboarded }: { onboarded: boolean } = $props();
 
@@ -43,7 +43,7 @@
     { title: "Meet macaron-bot", description: "An AI contributor for open-source projects.", body: StepBot },
     { title: "How it works", description: "From your mention to its comment, on GitHub Actions.", body: StepHow },
     { title: "What you can ask", description: "The comments it answers, and where to write them.", body: StepCommands },
-    { title: "Bring a project", description: "Where the bot may work, and how a repository is added.", body: StepProject },
+    { title: "Bring a repository", description: "Where the bot may work, and how a repository is added.", body: StepOrg },
     { title: "Help and links", description: "Where to read more, and to report a problem.", body: StepLinks },
     { title: "Your key and cost", description: "Every run is paid for by whoever asks.", body: StepKey },
   ];

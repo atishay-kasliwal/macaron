@@ -19,7 +19,7 @@
   <Card.Header>
     <Card.Title>Monthly cap</Card.Title>
     <Card.Description>
-      The most your key may be billed each calendar month (UTC). A run that could pass it is refused, with what's left. Project budgets apply as well.
+      The most your key may be billed each calendar month (UTC). A run that could pass it is refused, with what's left. Organisation budgets apply as well.
     </Card.Description>
   </Card.Header>
   <Card.Content class="grid gap-6">

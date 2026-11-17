@@ -9,6 +9,7 @@ import { CONFIGURED_MODELS, configuredModels } from "./config/configured-models.
 import { ConfigSnapshotStore, DrizzleConfigSnapshotStore } from "./config/config-snapshots.store.ts";
 import { ConfigUpdates } from "./config/config-updates.ts";
 import { PublishedConfigClient } from "./config/published-config.client.ts";
+import { GitHubOwnerLogins, OwnerLogins } from "./config/owner-logins.ts";
 import { RepoConfigService } from "./config/repo-config.service.ts";
 import { BotIdentity } from "./github/bot-identity.ts";
 import { InvitationsService } from "./accounts/invitations.service.ts";
@@ -26,7 +27,7 @@ import { ModelPreferencesService } from "./keys/model-preferences.service.ts";
 import { AdminController } from "./http/admin.controller.ts";
 import { BootstrapController } from "./http/bootstrap.controller.ts";
 import { MeController } from "./http/me.controller.ts";
-import { ProjectsController } from "./http/projects.controller.ts";
+import { OrgsController } from "./http/orgs.controller.ts";
 import { HealthController } from "./http/health.controller.ts";
 import { WebhookController } from "./http/webhook.controller.ts";
 import { ContextBuilder } from "./ingest/context-builder.ts";
@@ -40,7 +41,7 @@ import { Jobs } from "./jobs/jobs.ts";
 import { EvidenceHost } from "./publish/evidence-host.ts";
 import { ForkCommitter } from "./publish/fork-committer.ts";
 import { DrizzleForkStore, ForkRegistry, ForkStore } from "./publish/fork-registry.ts";
-import { ProjectsService } from "./publish/projects.service.ts";
+import { OrgsService } from "./publish/orgs.service.ts";
 import { OnboardingNotice } from "./config/onboarding-notice.ts";
 import { Publisher } from "./publish/publisher.ts";
 import { KnowledgeProposer } from "./knowledge/knowledge-proposer.ts";
@@ -60,6 +61,7 @@ import { ThreadStates } from "./routing/thread-states.ts";
 @Module({
   providers: [
     RepoConfigService,
+    { provide: OwnerLogins, useClass: GitHubOwnerLogins },
     PublishedConfigClient,
     { provide: ConfigSnapshotStore, useClass: DrizzleConfigSnapshotStore },
     ConfigUpdates,
@@ -109,9 +111,9 @@ export class BudgetModule {}
     { provide: ForkStore, useClass: DrizzleForkStore },
     ForkRegistry,
     OnboardingNotice,
-    ProjectsService,
+    OrgsService,
   ],
-  exports: [ForkCommitter, UpstreamWriter, ReactionTargets, Publisher, ForkRegistry, ProjectsService],
+  exports: [ForkCommitter, UpstreamWriter, ReactionTargets, Publisher, ForkRegistry, OrgsService],
 })
 export class PublishModule {}
 
@@ -167,10 +169,10 @@ export class IngestModule {}
 
 /**
  * The edge exposes /v1/bootstrap and /v1/webhook (and better-auth's /api/auth, mounted in main.ts).
- * /v1/me, /v1/admin and /v1/projects are reached only by the web app, through the cluster Service.
+ * /v1/me, /v1/admin and /v1/orgs are reached only by the web app, through the cluster Service.
  */
 @Module({
   imports: [RunsModule, AccountsModule, PublishModule, TerminusModule],
-  controllers: [BootstrapController, WebhookController, HealthController, MeController, AdminController, ProjectsController],
+  controllers: [BootstrapController, WebhookController, HealthController, MeController, AdminController, OrgsController],
 })
 export class HttpModule {}
