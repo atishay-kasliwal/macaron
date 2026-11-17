@@ -4,6 +4,7 @@ import { ConfigSnapshotStore } from "../../src/config/config-snapshots.store.ts"
 import type { AppEnv } from "../../src/config/env.ts";
 import { OnboardingNotice } from "../../src/config/onboarding-notice.ts";
 import { PublishedConfigClient } from "../../src/config/published-config.client.ts";
+import { FileLogins } from "../../src/config/owner-logins.ts";
 import { RepoConfigService } from "../../src/config/repo-config.service.ts";
 import type { BotIdentity } from "../../src/github/bot-identity.ts";
 import type { GitHub } from "../../src/github/github.ts";
@@ -61,7 +62,7 @@ export function fixedConfig(env: AppEnv, snapshot: ConfigSnapshot): RepoConfigSe
     override get snapshot(): ConfigSnapshot {
       return snapshot;
     }
-  })(env, new PublishedConfigClient(env), new NoSnapshots());
+  })(env, new PublishedConfigClient(env), new NoSnapshots(), new FileLogins());
 }
 
 /** A registry over `store`, never started: tests call `ensure` and `of` themselves. */
@@ -73,7 +74,7 @@ export function forkRegistry(options: {
   readonly store?: ForkStore;
   readonly config?: RepoConfigService;
 }): ForkRegistry {
-  const config = options.config ?? new RepoConfigService(options.env, new PublishedConfigClient(options.env), new NoSnapshots());
+  const config = options.config ?? new RepoConfigService(options.env, new PublishedConfigClient(options.env), new NoSnapshots(), new FileLogins());
   const notice = new OnboardingNotice(options.gh, options.env, config, options.clock);
   return new ForkRegistry(options.gh, options.bot, options.store ?? new MemoryForkStore(), config, new Jobs(options.env), notice);
 }

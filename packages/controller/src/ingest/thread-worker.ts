@@ -5,7 +5,7 @@ import { RepoConfigService } from "../config/repo-config.service.ts";
 import { BotIdentity } from "../github/bot-identity.ts";
 import { Jobs, Queue, RunCompletedJob, ThreadReadyJob } from "../jobs/jobs.ts";
 import { repoRef } from "../github/repo-ref.ts";
-import { ForkRegistry } from "../publish/fork-registry.ts";
+import { ForkRegistry, ForkUnavailable } from "../publish/fork-registry.ts";
 import { Publisher } from "../publish/publisher.ts";
 import { ReactionTargets, reactionTargetOf } from "../publish/reaction-targets.ts";
 import { isRefusal, platformOf, platformOfRun, type Route, route, type Subject, subjectOf, subjectOfRun, type ThreadState } from "../routing/routes.ts";
@@ -185,8 +185,14 @@ export class ThreadWorker implements OnApplicationBootstrap {
   private async start(config: RepoConfig, thread: ThreadRecord, routed: Route, trigger: Trigger, triggerGithubId: number | null): Promise<LaunchOutcome> {
     const platform = platformOf(routed);
     if (runnerFor(config, platform) === undefined) return { kind: "refused", reason: `\`${platform}\` isn't enabled for this repository` };
-    // Onboarding creates the fork once the configuration is live (ForkRegistry): until then, nothing to push to.
-    if ((await this.forks.of(config.repo)) === undefined) return { kind: "refused", reason: "this repository is still being onboarded: the bot's fork isn't ready yet" };
+    // Onboarding creates a listed repository's fork once the configuration is live, a fallback
+    // repository's on its first request (ForkRegistry): until it is ready, nothing to push to.
+    try {
+      if ((await this.forks.forRun(config)) === undefined) return { kind: "queued", reason: "the bot's fork is being created" };
+    } catch (error: unknown) {
+      if (error instanceof ForkUnavailable) return { kind: "refused", reason: `the bot has no fork to work from: ${error.message}` };
+      throw error;
+    }
     const context = await this.contexts.build(config, thread, routed, trigger);
     // Nothing to check: no runner, no cost.
     if (context.review?.rules.length === 0) {

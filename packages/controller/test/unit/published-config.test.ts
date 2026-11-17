@@ -5,8 +5,10 @@ import { setupServer } from "msw/node";
 import { afterAll, afterEach, beforeAll, describe, expect, it } from "vitest";
 import { UpstreamError } from "../../src/common/errors.ts";
 import { ConfigSnapshotStore } from "../../src/config/config-snapshots.store.ts";
+import { FileLogins, GitHubOwnerLogins, OwnerLogins } from "../../src/config/owner-logins.ts";
 import { PublishedConfigClient } from "../../src/config/published-config.client.ts";
 import { RepoConfigService } from "../../src/config/repo-config.service.ts";
+import { createGitHub } from "../../src/github/github.ts";
 import { testEnv } from "../support/env.ts";
 
 const BASE = "https://config.example.test/v1";
@@ -83,8 +85,8 @@ describe("PublishedConfigClient", () => {
 });
 
 describe("RepoConfigService with a published configuration", () => {
-  async function started(store = new MemoryStore()): Promise<{ service: RepoConfigService; store: MemoryStore }> {
-    const service = new RepoConfigService(env(), new PublishedConfigClient(env()), store);
+  async function started(store = new MemoryStore(), logins: OwnerLogins = new FileLogins()): Promise<{ service: RepoConfigService; store: MemoryStore }> {
+    const service = new RepoConfigService(env(), new PublishedConfigClient(env()), store, logins);
     await service.onModuleInit();
     service.onApplicationShutdown();
     return { service, store };
@@ -95,7 +97,7 @@ describe("RepoConfigService with a published configuration", () => {
     const { service, store } = await started();
 
     expect(service.commit).toBe(ONE);
-    expect(service.repo("axel7083/foobar-tmp-demo")?.project).toBe("sandbox");
+    expect(service.repo("axel7083/foobar-tmp-demo")).toMatchObject({ org: "axel7083", knowledge: "sandbox", fallback: false });
     expect(store.saved.map((config) => config.commit)).toEqual([ONE]);
   });
 
@@ -113,7 +115,7 @@ describe("RepoConfigService with a published configuration", () => {
     serve(() => current);
     const { service, store } = await started();
 
-    current = published(TWO, { "projects/sandbox/repos/broken.yaml": "repo: not a slug\n" });
+    current = published(TWO, { "orgs/axel7083/org.yaml": "org: axel7083\n" });
     expect(await service.reload(TWO)).toMatchObject({ applied: false, retry: false });
     expect(service.commit).toBe(ONE);
 
@@ -134,5 +136,42 @@ describe("RepoConfigService with a published configuration", () => {
     expect(await service.reload(TWO)).toEqual({ applied: true, commit: TWO });
     expect(await service.reload()).toMatchObject({ applied: false, reason: "unchanged" });
     expect(store.saved.map((config) => config.commit)).toEqual([ONE, TWO]);
+  });
+
+  it("configures an unlisted repository by its org's fallback, and none of an org without one", async () => {
+    serve(published(ONE));
+    const { service } = await started();
+
+    expect(service.repo("podman-desktop/extension-kind")).toMatchObject({ fallback: true, environment: { name: "generic" }, caps: { perRepoMonthUsd: 5 } });
+    expect(service.repo("Podman-Desktop/Extension-Minikube")).toMatchObject({ fallback: false, repo: "Podman-Desktop/Extension-Minikube" });
+    expect(service.repo("redhat-developer/unlisted")).toBeUndefined();
+    expect(service.repo("someone-else/repo")).toBeUndefined();
+    expect(service.repo("not a slug")).toBeUndefined();
+  });
+
+  it("follows an org renamed since its file was written, and stops trusting its old login", async () => {
+    serve(published(ONE));
+    const renamed = new (class extends OwnerLogins {
+      override current(): Promise<ReadonlyMap<number, string>> {
+        return Promise.resolve(new Map([[129859460, "podman-desktop-renamed"]]));
+      }
+    })();
+    const { service } = await started(new MemoryStore(), renamed);
+
+    expect(service.repo("podman-desktop-renamed/extension-minikube")).toMatchObject({ repo: "podman-desktop-renamed/extension-minikube", org: "podman-desktop", fallback: false });
+    expect(service.repo("podman-desktop/extension-minikube")).toBeUndefined();
+    expect(service.org("PODMAN-DESKTOP-RENAMED")?.id).toBe(129859460);
+  });
+});
+
+describe("GitHubOwnerLogins", () => {
+  it("finds each account's current login, and leaves out those it can't", async () => {
+    server.use(
+      http.get("https://api.github.com/user/1", () => HttpResponse.json({ id: 1, login: "renamed-org" })),
+      http.get("https://api.github.com/user/2", () => HttpResponse.json({ message: "Not Found" }, { status: 404 })),
+    );
+    const logins = new GitHubOwnerLogins(createGitHub("test", "token", env().GITHUB_API_VERSION, { throttled: false }));
+
+    expect(await logins.current([1, 2])).toEqual(new Map([[1, "renamed-org"]]));
   });
 });

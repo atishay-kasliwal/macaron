@@ -11,7 +11,7 @@ import { fixedConfig } from "../support/forks.ts";
 
 const API = "https://api.github.com/repositories/3003";
 const REPO = RepoSlug.parse("axel7083/foobar-tmp-demo");
-const FILE = "projects/sandbox/repos/foobar-tmp-demo.yaml";
+const FILE = "orgs/axel7083/org.yaml";
 const MERGE_SHA = "a".repeat(40);
 const FORK_URL = "https://github.com/macaron-bot/abc123-foobar-tmp-demo";
 const server = setupServer();
@@ -55,7 +55,7 @@ function configRepo(options: { readonly mergedAt?: string | null; readonly comme
 const notice = (env = published) => new OnboardingNotice(gh, env, fixedConfig(env, snapshot), clock);
 
 describe("OnboardingNotice", () => {
-  it("links the fork on the pull request that last changed the repository's file", async () => {
+  it("links the fork on the pull request that last changed the repository's org file", async () => {
     const config = configRepo();
 
     await notice().onboarded(REPO, FORK_URL);

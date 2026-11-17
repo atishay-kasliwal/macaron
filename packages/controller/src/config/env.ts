@@ -11,7 +11,7 @@ const RawEnv = z.object({
   /** Public base URL (the Route to the edge); also the OIDC audience runners must request. */
   PUBLIC_URL: z.url({ protocol: /^https$/ }),
   DATABASE_URL: z.string().regex(/^postgres(ql)?:\/\//, "expected a postgres:// URL"),
-  /** Directory holding global.yaml and projects/: local runs and tests, used when CONFIG_URL is unset. */
+  /** Directory holding global.yaml and orgs/: local runs and tests, used when CONFIG_URL is unset. */
   CONFIG_DIR: z.string().min(1).default("/opt/macaron/config"),
   /** open-macaron/config's snapshot on GitHub Pages (its `config.json` directory), e.g. https://open-macaron.github.io/config/v1. */
   CONFIG_URL: z.url({ protocol: /^https$/ }).optional(),

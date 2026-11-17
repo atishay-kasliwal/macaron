@@ -106,7 +106,7 @@ async function proposer(): Promise<KnowledgeProposer> {
   return new KnowledgeProposer(env, gh, new ForkCommitter(gh), bot, new FakeClock(new Date("2026-10-21T10:00:00Z")));
 }
 
-const proposal = (learnings: readonly Learning[]) => ({ context, config: { project: Slug.parse("podman-desktop"), repo: RepoSlug.parse("axel7083/podman-desktop") }, learnings, runUrl: "https://github.com/open-macaron/runner/actions/runs/1", runId: "run-1" });
+const proposal = (learnings: readonly Learning[]) => ({ context, config: { knowledge: Slug.parse("podman-desktop"), repo: RepoSlug.parse("axel7083/podman-desktop") }, learnings, runUrl: "https://github.com/open-macaron/runner/actions/runs/1", runId: "run-1" });
 
 describe("KnowledgeProposer", () => {
   it("opens one pull request per folder, from a new branch at main, with each lesson's file", async () => {

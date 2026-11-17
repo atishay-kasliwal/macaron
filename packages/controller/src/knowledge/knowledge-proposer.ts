@@ -11,7 +11,7 @@ import { lessonFile, type LessonFile, slugOf } from "./lesson-files.ts";
 
 export interface Proposal {
   readonly context: RunContext;
-  readonly config: Pick<RepoConfig, "project" | "repo">;
+  readonly config: Pick<RepoConfig, "knowledge" | "repo">;
   readonly learnings: readonly Learning[];
   /** The run's Actions URL, linked from the pull request. */
   readonly runUrl: string | null;

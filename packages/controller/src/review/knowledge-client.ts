@@ -16,15 +16,15 @@ export class KnowledgeClient {
     this.source = new KnowledgeSource(env.KNOWLEDGE_URL);
   }
 
-  async rulesFor(config: Pick<RepoConfig, "project" | "repo">): Promise<ReviewRules> {
+  async rulesFor(config: Pick<RepoConfig, "knowledge" | "repo">): Promise<ReviewRules> {
     const { commit, rules } = await this.knowledgeFor(config);
     return { commit, rules };
   }
 
   /** Rules and lessons at one commit. */
-  async knowledgeFor(config: Pick<RepoConfig, "project" | "repo">): Promise<Knowledge> {
+  async knowledgeFor(config: Pick<RepoConfig, "knowledge" | "repo">): Promise<Knowledge> {
     try {
-      return await this.source.knowledge({ project: config.project, repo: config.repo });
+      return await this.source.knowledge({ project: config.knowledge, repo: config.repo });
     } catch (error: unknown) {
       if (error instanceof KnowledgeUnavailable) throw new UpstreamError("knowledge", error.message, error.status, { cause: error });
       throw error;
