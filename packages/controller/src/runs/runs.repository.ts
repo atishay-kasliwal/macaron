@@ -9,6 +9,14 @@ import type { UsdMicros } from "../common/money.ts";
 import type { Db } from "../db/db.module.ts";
 import { effects, ledger, runs, threads } from "../db/schema.ts";
 
+/** Whom a ledger row's money is counted against. */
+export interface LedgerAttribution {
+  readonly repo: string;
+  /** The org file's login. */
+  readonly org: string;
+  readonly fallback: boolean;
+}
+
 export type ThreadRecord = typeof threads.$inferSelect;
 export type RunRecord = typeof runs.$inferSelect;
 export type RunStatus = RunRecord["status"];
@@ -169,7 +177,7 @@ export class RunsRepository {
   }
 
   /** Records the run's final cost, once, in the run and in the append-only ledger. */
-  async settle(runId: string, costMicros: UsdMicros, attribution: { repo: string; project: string }, now: Date, tokensUsed: number | null = null): Promise<boolean> {
+  async settle(runId: string, costMicros: UsdMicros, attribution: LedgerAttribution, now: Date, tokensUsed: number | null = null): Promise<boolean> {
     return this.db.transaction(async (tx) => {
       const [settled] = await tx
         .update(runs)
@@ -182,8 +190,8 @@ export class RunsRepository {
     });
   }
 
-  async recordRouterSpend(repo: string, project: string, usdMicros: UsdMicros): Promise<void> {
-    await this.db.insert(ledger).values({ kind: "router", runId: null, repo, project, usdMicros });
+  async recordRouterSpend(attribution: LedgerAttribution, usdMicros: UsdMicros): Promise<void> {
+    await this.db.insert(ledger).values({ kind: "router", runId: null, ...attribution, usdMicros });
   }
 
   async spentOnThread(threadId: string): Promise<UsdMicros> {
@@ -200,8 +208,17 @@ export class RunsRepository {
     return row?.total ?? 0;
   }
 
-  async spentOnProjectSince(project: string, since: Date): Promise<UsdMicros> {
-    const [row] = await this.db.select({ total: sumMicros }).from(ledger).where(and(eq(ledger.project, project), gte(ledger.at, since)));
+  async spentOnOrgSince(org: string, since: Date): Promise<UsdMicros> {
+    const [row] = await this.db.select({ total: sumMicros }).from(ledger).where(and(eq(ledger.org, org), gte(ledger.at, since)));
+    return row?.total ?? 0;
+  }
+
+  /** What the repositories only `org`'s fallback configures spent together since `since`. */
+  async spentOnFallbackSince(org: string, since: Date): Promise<UsdMicros> {
+    const [row] = await this.db
+      .select({ total: sumMicros })
+      .from(ledger)
+      .where(and(eq(ledger.org, org), eq(ledger.fallback, true), gte(ledger.at, since)));
     return row?.total ?? 0;
   }
 

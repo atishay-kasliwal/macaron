@@ -191,11 +191,14 @@ export const ledger = pgTable(
     kind: ledgerKind("kind").notNull(),
     runId: uuid("run_id").references(() => runs.id, { onDelete: "restrict" }),
     repo: text("repo").notNull(),
-    project: text("project").notNull(),
+    /** The org file's login. Rows from before orgs hold their project's name. */
+    org: text("org").notNull(),
+    /** Configured by its org's fallback, which has a monthly budget of its own. */
+    fallback: boolean("fallback").notNull().default(false),
     usdMicros: usdMicros("usd_micros").notNull(),
     at: createdAt(),
   },
-  (table) => [index("ledger_repo_at").on(table.repo, table.at), index("ledger_project_at").on(table.project, table.at)],
+  (table) => [index("ledger_repo_at").on(table.repo, table.at), index("ledger_org_at").on(table.org, table.at)],
 );
 
 /** Idempotency keys for external side effects: a retried job never posts twice. */

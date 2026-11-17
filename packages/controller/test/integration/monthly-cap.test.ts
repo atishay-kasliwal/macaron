@@ -42,7 +42,7 @@ async function run(payerId: string, limitUsd: number, costUsd?: number, at: Date
     payerId,
   });
   if (costUsd === undefined) return;
-  await runs.settle(created.id, Math.round(costUsd * 1_000_000), { repo: "org-x/repo-a", project: "sandbox" }, at, tokens?.used ?? null);
+  await runs.settle(created.id, Math.round(costUsd * 1_000_000), { repo: "org-x/repo-a", org: "sandbox", fallback: false }, at, tokens?.used ?? null);
   // The ledger stamps entries with the database's time: back-date this one.
   await db.update(ledger).set({ at }).where(eq(ledger.runId, created.id));
 }
