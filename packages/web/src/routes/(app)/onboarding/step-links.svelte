@@ -11,7 +11,7 @@
   const links = [
     { icon: BugIcon, title: "Report a problem", text: "Something wrong with the bot or this app: open an issue on open-macaron/macaron.", href: onboardingLinks.newIssue },
     { icon: BookOpenIcon, title: "How the bot works", text: "The README, then the design document: architecture and trust boundaries.", href: onboardingLinks.readme },
-    { icon: SettingsIcon, title: "open-macaron/config", text: "The trusted projects and repositories, their owners and budgets.", href: onboardingLinks.config },
+    { icon: SettingsIcon, title: "open-macaron/config", text: "The trusted organisations and repositories, their owners and budgets.", href: onboardingLinks.config },
     { icon: BrainIcon, title: "open-macaron/knowledge", text: "The rules reviews check, and the lessons the bot learned.", href: onboardingLinks.knowledge },
     { icon: PlayIcon, title: "open-macaron/runner", text: "Where every run happens, in public.", href: onboardingLinks.runner },
     { icon: ClipboardCheckIcon, title: "Review locally", text: "The same review, before you push, with your own agent: npx @open-macaron/review.", href: onboardingLinks.localReview },

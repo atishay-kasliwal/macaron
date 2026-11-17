@@ -21,7 +21,7 @@ import {
   zGetModelStatsResponse,
   zListEndpointsResponse,
   zListInvitationsResponse,
-  zListProjectsResponse,
+  zListOrgsResponse,
   zListRefusalsResponse,
   zListRunsResponse,
   zListUsersResponse,
@@ -54,11 +54,12 @@ type Preference = z.infer<typeof zSetMyModelsBody>["preference"];
 
 export const SESSION_COOKIE = "__Secure-macaron.session_token";
 const DAY = 86_400_000;
-/** One page and a bit of /v1/projects: a project without repositories, a repository not ready, then ready ones. */
-const PROJECT_ROWS: z.infer<typeof zListProjectsResponse>["rows"] = [
-  { project: "empty-project", repo: null, fork: null },
-  { project: "sandbox", repo: "open-macaron/sandbox-b", fork: null },
-  ...Array.from({ length: 28 }, (_, index) => ({ project: "sandbox", repo: `open-macaron/repo-${String(index)}`, fork: `macaron-bot/x1y2z3-repo-${String(index)}` })),
+/** One page and a bit of /v1/orgs: an org without repositories, a repository not ready, a fallback one, then ready ones. */
+const ORG_ROWS: z.infer<typeof zListOrgsResponse>["rows"] = [
+  { org: "empty-org", repo: null, fork: null, fallback: false },
+  { org: "open-macaron", repo: "open-macaron/sandbox-b", fork: null, fallback: false },
+  { org: "open-macaron", repo: "open-macaron/unlisted", fork: "macaron-bot/a1b2c3-unlisted", fallback: true },
+  ...Array.from({ length: 27 }, (_, index) => ({ org: "open-macaron", repo: `open-macaron/repo-${String(index)}`, fork: `macaron-bot/x1y2z3-repo-${String(index)}`, fallback: false })),
 ];
 const ALL: User["capabilities"] = ["triage", "plan", "implement", "reproduce", "verify", "review", "remember"];
 
@@ -82,8 +83,8 @@ interface State {
   refusals: Refusal[];
   /** By user id: when each closed the onboarding. /__forget-onboarding removes one. */
   onboarded: Map<string, string>;
-  /** Set by /__break-projects: /v1/projects answers 500. */
-  projectsBroken: boolean;
+  /** Set by /__break-orgs: /v1/orgs answers 500. */
+  orgsBroken: boolean;
   /** Session renewals the browser asked for (through the edge), counted for the session test. */
   renewals: number;
 }
@@ -141,7 +142,7 @@ function fresh(): State {
     { id: randomUUID(), repo: "open-macaron/sandbox", number: 11, kind: "issue", author: "defunkt", authorId: 2, url: "https://github.com/open-macaron/sandbox/issues/11#issuecomment-1", reason: "@defunkt may not ask for implement: an admin grants it on the Users page", createdAt: at(-0.2) },
     { id: randomUUID(), repo: "open-macaron/macaron", number: 12, kind: "pull", author: "octocat", authorId: 583231, url: "https://github.com/open-macaron/macaron/pull/12#issuecomment-2", reason: null, createdAt: at(-3) },
   ];
-  return { users, invitations, endpoints, keys: new Map(), preferences: new Map(), keyEvents: new Map(), caps: new Map(), tokenCaps: new Map(), runs, adminRuns, refusals, onboarded: new Map(users.map((user) => [user.id, user.createdAt])), projectsBroken: false, renewals: 0 };
+  return { users, invitations, endpoints, keys: new Map(), preferences: new Map(), keyEvents: new Map(), caps: new Map(), tokenCaps: new Map(), runs, adminRuns, refusals, onboarded: new Map(users.map((user) => [user.id, user.createdAt])), orgsBroken: false, renewals: 0 };
 }
 
 let state = fresh();
@@ -186,8 +187,8 @@ async function route(request: IncomingMessage): Promise<Reply> {
     state = fresh();
     return reply(200, undefined, { reset: true });
   }
-  if (method === "POST" && url.pathname === "/__break-projects") {
-    state.projectsBroken = true;
+  if (method === "POST" && url.pathname === "/__break-orgs") {
+    state.orgsBroken = true;
     return reply(200, undefined, { broken: true });
   }
   if (url.pathname === "/__renewals") return reply(200, undefined, { renewals: state.renewals });
@@ -229,13 +230,13 @@ async function route(request: IncomingMessage): Promise<Reply> {
     if (!state.onboarded.has(user.id)) state.onboarded.set(user.id, new Date().toISOString());
     return reply(204, undefined, undefined);
   }
-  if (url.pathname === "/v1/projects") {
-    if (state.projectsBroken) return reply(500, undefined, { error: "internal" });
+  if (url.pathname === "/v1/orgs") {
+    if (state.orgsBroken) return reply(500, undefined, { error: "internal" });
     const after = url.searchParams.get("after");
     const start = after === null ? 0 : Number(after);
     const limit = Number(url.searchParams.get("limit") ?? "25");
     const end = start + limit;
-    return reply(200, zListProjectsResponse, { rows: PROJECT_ROWS.slice(start, end), nextCursor: end < PROJECT_ROWS.length ? String(end) : null });
+    return reply(200, zListOrgsResponse, { rows: ORG_ROWS.slice(start, end), nextCursor: end < ORG_ROWS.length ? String(end) : null });
   }
   if (url.pathname === "/v1/me/usage") {
     const limit = Number(url.searchParams.get("limit") ?? "25");

@@ -22,12 +22,12 @@ export function folderOfScope(scope: string): string {
 }
 
 /** Where a new lesson of `learning` goes, for the repository the run worked on. */
-export function folderOfLearning(level: Learning["scope"], config: Pick<RepoConfig, "project" | "repo">): string {
+export function folderOfLearning(level: Learning["scope"], config: Pick<RepoConfig, "knowledge" | "repo">): string {
   switch (level) {
     case "global":
       return "global";
     case "project":
-      return `projects/${config.project}`;
+      return `projects/${config.knowledge}`;
     case "repo":
       return `repos/${config.repo}`;
   }
@@ -43,7 +43,7 @@ export interface LessonInput {
   readonly learning: Learning;
   /** The lessons the run was given; `learning.updates` names one of them (the Gate checked it). */
   readonly lessons: readonly PublishedLesson[];
-  readonly config: Pick<RepoConfig, "project" | "repo">;
+  readonly config: Pick<RepoConfig, "knowledge" | "repo">;
   /** The `remember:` comment. */
   readonly triggerUrl: string;
   /** `YYYY-MM-DD`: when the run checked the lesson. */

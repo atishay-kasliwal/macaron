@@ -29,7 +29,7 @@ afterAll(() => {
   server.close();
 });
 
-const config = { project: Slug.parse("sandbox"), repo: RepoSlug.parse("axel7083/foobar-tmp-demo") };
+const config = { knowledge: Slug.parse("sandbox"), repo: RepoSlug.parse("axel7083/foobar-tmp-demo") };
 
 describe("KnowledgeClient", () => {
   const client = () => new KnowledgeClient(testEnv({ KNOWLEDGE_URL: BASE }));

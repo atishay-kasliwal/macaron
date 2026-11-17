@@ -1,15 +1,15 @@
 import type { OwnersLayout } from "@open-macaron/owners";
 
 /**
- * open-macaron/config's layout: each `projects/<p>/` is owned by the owners in its `OWNERS.yaml`.
+ * open-macaron/config's layout: each `orgs/<org>/` is owned by the owners in its `OWNERS.yaml`.
  * Everything else (`global.yaml`, the repository's own files, `.github/`) is the platform team's.
  */
-const PROJECT = /^[a-z0-9]+(-[a-z0-9]+)*$/;
+const LOGIN = /^[A-Za-z0-9-]{1,39}$/;
 
 export function folderOf(path: string): { readonly path: string } | undefined {
-  const [top, project, ...rest] = path.split("/");
-  if (top !== "projects" || project === undefined || rest.length === 0 || !PROJECT.test(project) || project.length > 64) return undefined;
-  return { path: `projects/${project}` };
+  const [top, org, ...rest] = path.split("/");
+  if (top !== "orgs" || org === undefined || rest.length === 0 || !LOGIN.test(org)) return undefined;
+  return { path: `orgs/${org}` };
 }
 
 export const configLayout: OwnersLayout = { folderOf };

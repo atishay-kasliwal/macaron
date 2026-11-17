@@ -52,7 +52,7 @@ beforeAll(async () => {
     await runs.markDispatched(run.id, 9000 + index);
     if (launch.outcome !== "running") {
       await runs.finish(run.id, { status: launch.outcome === "failed" ? "failed" : "completed", failure: launch.outcome === "failed" ? "the agent ran out of turns" : null }, new Date(launch.at));
-      await runs.settle(run.id, 500_000, { repo: launch.repo, project: "x" }, new Date(launch.at), 1_500_000);
+      await runs.settle(run.id, 500_000, { repo: launch.repo, org: "x" }, new Date(launch.at), 1_500_000);
     }
     await db.update(runsTable).set({ createdAt: new Date(launch.at) }).where(eq(runsTable.id, run.id));
   }

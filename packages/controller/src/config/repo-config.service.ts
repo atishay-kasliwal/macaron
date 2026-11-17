@@ -5,13 +5,16 @@ import {
   ConfigTreeError,
   type GitHubLogin,
   loadConfigTree,
+  type OrgFile,
   parseConfigTree,
   type PublishedConfig,
   type RepoConfig,
-  repoKey,
+  RepoSlug,
+  resolveRepoConfig,
 } from "@open-macaron/contracts";
 import { describeError, UpstreamError } from "../common/errors.ts";
 import { ConfigSnapshotStore } from "./config-snapshots.store.ts";
+import { OwnerLogins } from "./owner-logins.ts";
 import { APP_ENV, type AppEnv } from "./env.ts";
 import { PublishedConfigClient } from "./published-config.client.ts";
 
@@ -20,6 +23,33 @@ export type ConfigCheck = (snapshot: ConfigSnapshot) => Promise<readonly string[
 
 /** Told about each configuration applied after boot (e.g. to onboard new repositories). */
 export type ConfigListener = (snapshot: ConfigSnapshot) => Promise<void>;
+
+/** A snapshot's orgs under their owners' current logins, and the repositories resolved so far. */
+class Owners {
+  private readonly byLogin = new Map<string, OrgFile>();
+  private readonly resolved = new Map<string, RepoConfig | undefined>();
+
+  constructor(
+    private readonly snapshot: ConfigSnapshot,
+    current: ReadonlyMap<number, string>,
+  ) {
+    for (const [id, org] of snapshot.orgs) this.byLogin.set((current.get(id) ?? org.org).toLowerCase(), org);
+  }
+
+  org(login: string): OrgFile | undefined {
+    return this.byLogin.get(login.toLowerCase());
+  }
+
+  repo(fullName: string): RepoConfig | undefined {
+    const key = fullName.toLowerCase();
+    if (this.resolved.has(key)) return this.resolved.get(key);
+    const slug = RepoSlug.safeParse(fullName);
+    const org = slug.success ? this.org(slug.data.slice(0, slug.data.indexOf("/"))) : undefined;
+    const config = slug.success && org !== undefined ? resolveRepoConfig(this.snapshot.global, org, slug.data) : undefined;
+    this.resolved.set(key, config);
+    return config;
+  }
+}
 
 export type ReloadResult =
   | { readonly applied: true; readonly commit: CommitSha | undefined }
@@ -37,6 +67,7 @@ export class RepoConfigService implements OnModuleInit, OnApplicationShutdown {
   private readonly logger = new Logger(RepoConfigService.name);
   private current: ConfigSnapshot | undefined;
   private currentCommit: CommitSha | undefined;
+  private readonly owners = new WeakMap<ConfigSnapshot, Owners>();
   private readonly checks: ConfigCheck[] = [];
   private readonly listeners: ConfigListener[] = [];
   private readonly onHangup = (): void => {
@@ -47,12 +78,13 @@ export class RepoConfigService implements OnModuleInit, OnApplicationShutdown {
     @Inject(APP_ENV) private readonly env: AppEnv,
     private readonly published: PublishedConfigClient,
     private readonly store: ConfigSnapshotStore,
+    private readonly logins: OwnerLogins,
   ) {}
 
   async onModuleInit(): Promise<void> {
     if (this.env.publishedConfig === undefined) {
-      this.current = await loadConfigTree(this.env.CONFIG_DIR);
-      this.logger.log(`configuration loaded from ${this.env.CONFIG_DIR}: ${String(this.current.repos.size)} repositories`);
+      this.current = await this.followRenames(await loadConfigTree(this.env.CONFIG_DIR));
+      this.logger.log(`configuration loaded from ${this.env.CONFIG_DIR}: ${String(this.current.repos.size)} listed repositories`);
     } else {
       await this.loadPublished();
     }
@@ -91,6 +123,7 @@ export class RepoConfigService implements OnModuleInit, OnApplicationShutdown {
       }
       const problems = (await Promise.all(this.checks.map((check) => check(snapshot)))).flat();
       if (problems.length > 0) throw new ConfigTreeError(problems);
+      await this.followRenames(snapshot);
     } catch (error: unknown) {
       const reason = describeError(error);
       this.logger.error(`configuration ${commit ?? ""} rejected, keeping ${this.currentCommit ?? "the live one"}: ${reason}`);
@@ -99,7 +132,7 @@ export class RepoConfigService implements OnModuleInit, OnApplicationShutdown {
     this.current = snapshot;
     this.currentCommit = published?.commit;
     if (published !== undefined) await this.remember(published);
-    this.logger.log(`configuration ${published?.commit ?? this.env.CONFIG_DIR} applied: ${String(snapshot.repos.size)} repositories`);
+    this.logger.log(`configuration ${published?.commit ?? this.env.CONFIG_DIR} applied: ${String(snapshot.repos.size)} listed repositories`);
     // The configuration is live either way: a listener's failure is logged, not the reload's.
     for (const listener of this.listeners) {
       try {
@@ -121,9 +154,39 @@ export class RepoConfigService implements OnModuleInit, OnApplicationShutdown {
     return this.currentCommit;
   }
 
-  /** The repo's merged config, or undefined when the repo isn't trusted. */
+  /**
+   * The repo's merged config: its org's entry for it, else the org's fallback. Undefined when the
+   * repo isn't trusted. Its owner is matched by current login, so an org keeps working when renamed.
+   */
   repo(fullName: string): RepoConfig | undefined {
-    return this.snapshot.repos.get(repoKey(fullName));
+    return this.ownersOf(this.snapshot).repo(fullName);
+  }
+
+  /** The org file of the account now called `login`. */
+  org(login: string): OrgFile | undefined {
+    return this.ownersOf(this.snapshot).org(login);
+  }
+
+  /** Looks up each org's current login before its snapshot goes live; a rename is logged, not fatal. */
+  private async followRenames(snapshot: ConfigSnapshot): Promise<ConfigSnapshot> {
+    const current = await this.logins.current([...snapshot.orgs.keys()]);
+    for (const [id, login] of current) {
+      const org = snapshot.orgs.get(id);
+      if (org !== undefined && org.org.toLowerCase() !== login.toLowerCase()) {
+        this.logger.warn(`${snapshot.orgFiles.get(id) ?? org.org}: account ${String(id)} is now ${login}, not ${org.org}`);
+      }
+    }
+    this.owners.set(snapshot, new Owners(snapshot, current));
+    return snapshot;
+  }
+
+  private ownersOf(snapshot: ConfigSnapshot): Owners {
+    let owners = this.owners.get(snapshot);
+    if (owners === undefined) {
+      owners = new Owners(snapshot, new Map());
+      this.owners.set(snapshot, owners);
+    }
+    return owners;
   }
 
   /**
@@ -142,17 +205,17 @@ export class RepoConfigService implements OnModuleInit, OnApplicationShutdown {
     try {
       const fetched = await this.published.fetch();
       if (!fetched.changed) throw new Error("no snapshot served");
-      this.current = parseConfigTree(new Map(Object.entries(fetched.config.files)));
+      this.current = await this.followRenames(parseConfigTree(new Map(Object.entries(fetched.config.files))));
       this.currentCommit = fetched.config.commit;
       await this.remember(fetched.config);
-      this.logger.log(`configuration ${fetched.config.commit} loaded: ${String(this.current.repos.size)} repositories`);
+      this.logger.log(`configuration ${fetched.config.commit} loaded: ${String(this.current.repos.size)} listed repositories`);
       return;
     } catch (error: unknown) {
       failure = describeError(error);
     }
     const stored = await this.store.latest();
     if (stored === undefined) throw new Error(`no configuration to start with: the published one failed (${failure}) and none was applied before`);
-    this.current = parseConfigTree(new Map(Object.entries(stored.files)));
+    this.current = await this.followRenames(parseConfigTree(new Map(Object.entries(stored.files))));
     this.currentCommit = stored.commit;
     this.logger.warn(`published configuration unavailable (${failure}): starting on ${stored.commit}, applied before`);
   }

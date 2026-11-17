@@ -18,7 +18,7 @@ const Comments = z.array(z.object({ body: z.string().optional(), user: z.object(
 /**
  * Tells the open-macaron/config pull request that onboarded a repository how it went: the fork's
  * link once it is ready, or why there is none. That pull request is the merged one of the last
- * commit touching the repository's file. Best effort: a comment that can't be posted is logged, and
+ * commit touching its org's file. Best effort: a comment that can't be posted is logged, and
  * onboarding stands. Posted once per repository and pull request (a marker in the comment), and only
  * for a recent merge. Written with GH_ORG: the org blocks GH_INTERACT, a classic token.
  */
@@ -54,7 +54,9 @@ export class OnboardingNotice {
 
   private async post(repo: RepoSlug, text: string): Promise<void> {
     const published = this.env.publishedConfig;
-    const path = this.config.snapshot.repoFiles.get(repoKey(repo));
+    // The org's file; a repository only its fallback configures came with no pull request.
+    const config = this.config.repo(repo);
+    const path = config === undefined || config.fallback ? undefined : this.config.snapshot.orgFiles.get(config.orgId);
     // A local CONFIG_DIR has no pull request to answer.
     if (published === undefined || path === undefined) return;
     try {

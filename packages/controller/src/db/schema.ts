@@ -191,11 +191,12 @@ export const ledger = pgTable(
     kind: ledgerKind("kind").notNull(),
     runId: uuid("run_id").references(() => runs.id, { onDelete: "restrict" }),
     repo: text("repo").notNull(),
-    project: text("project").notNull(),
+    /** The org file's login, for reports; rows from before orgs were moved to their repository owner's (migration org_ledger). */
+    org: text("org").notNull(),
     usdMicros: usdMicros("usd_micros").notNull(),
     at: createdAt(),
   },
-  (table) => [index("ledger_repo_at").on(table.repo, table.at), index("ledger_project_at").on(table.project, table.at)],
+  (table) => [index("ledger_repo_at").on(table.repo, table.at), index("ledger_org_at").on(table.org, table.at)],
 );
 
 /** Idempotency keys for external side effects: a retried job never posts twice. */

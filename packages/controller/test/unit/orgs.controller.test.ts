@@ -6,22 +6,22 @@ import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from "vites
 import { SessionsService } from "../../src/accounts/sessions.service.ts";
 import { SignInRequired } from "../../src/common/errors.ts";
 import { DomainErrorFilter } from "../../src/http/domain-error.filter.ts";
-import { ProjectsController } from "../../src/http/projects.controller.ts";
-import { ProjectsService } from "../../src/publish/projects.service.ts";
+import { OrgsController } from "../../src/http/orgs.controller.ts";
+import { OrgsService } from "../../src/publish/orgs.service.ts";
 
 const user = vi.fn<() => Promise<{ id: string }>>();
 const page = vi.fn<(limit: number, after: string | undefined) => Promise<{ rows: never[]; nextCursor: null }>>();
 
 @Module({
-  controllers: [ProjectsController],
+  controllers: [OrgsController],
   providers: [
     { provide: SessionsService, useValue: { user } },
-    { provide: ProjectsService, useValue: { page } },
+    { provide: OrgsService, useValue: { page } },
   ],
 })
 class TestModule {}
 
-describe("GET /v1/projects", () => {
+describe("GET /v1/orgs", () => {
   let app: NestExpressApplication;
   let base: string;
 
@@ -43,7 +43,7 @@ describe("GET /v1/projects", () => {
   it("reads nothing without a session", async () => {
     user.mockRejectedValue(new SignInRequired("no valid session"));
 
-    const response = await fetch(`${base}/v1/projects`);
+    const response = await fetch(`${base}/v1/orgs`);
 
     expect(response.status).toBe(401);
     expect(page).not.toHaveBeenCalled();
@@ -53,7 +53,7 @@ describe("GET /v1/projects", () => {
     user.mockResolvedValue({ id: "usr1" });
     page.mockResolvedValue({ rows: [], nextCursor: null });
 
-    const response = await fetch(`${base}/v1/projects`);
+    const response = await fetch(`${base}/v1/orgs`);
 
     expect(await response.json()).toEqual({ rows: [], nextCursor: null });
     expect(page).toHaveBeenCalledWith(25, undefined);
@@ -62,7 +62,7 @@ describe("GET /v1/projects", () => {
   it("refuses a page over the limit", async () => {
     user.mockResolvedValue({ id: "usr1" });
 
-    const response = await fetch(`${base}/v1/projects?limit=101`);
+    const response = await fetch(`${base}/v1/orgs?limit=101`);
 
     expect(response.status).toBe(400);
     expect(page).not.toHaveBeenCalled();

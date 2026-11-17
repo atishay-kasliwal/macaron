@@ -796,32 +796,33 @@ export type SetEndpointEnabledResponses = {
 
 export type SetEndpointEnabledResponse = SetEndpointEnabledResponses[keyof SetEndpointEnabledResponses];
 
-export type ListProjectsData = {
+export type ListOrgsData = {
     body?: never;
     path?: never;
     query?: {
         after?: string;
         limit?: number;
     };
-    url: '/v1/projects';
+    url: '/v1/orgs';
 };
 
-export type ListProjectsErrors = {
+export type ListOrgsErrors = {
     /**
      * No valid session
      */
     401: unknown;
 };
 
-export type ListProjectsResponses = {
+export type ListOrgsResponses = {
     200: {
         rows: Array<{
-            project: string;
+            org: string;
             repo: string | null;
             fork: string | null;
+            fallback: boolean;
         }>;
         nextCursor: string | null;
     };
 };
 
-export type ListProjectsResponse = ListProjectsResponses[keyof ListProjectsResponses];
+export type ListOrgsResponse = ListOrgsResponses[keyof ListOrgsResponses];

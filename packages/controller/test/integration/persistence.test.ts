@@ -126,7 +126,7 @@ describe("RunsRepository", () => {
 
   it("closes a run once, keeps its limit reserved until settled, then writes its cost to the ledger once", async () => {
     const { thread, run } = await newRun(4);
-    const attribution = { repo: "org-x/repo-a", project: "sandbox" };
+    const attribution = { repo: "org-x/repo-a", org: "sandbox" };
     const outcome = { status: "completed" as const, failure: null };
 
     expect([await runs.finish(run.id, outcome, new Date()), await runs.finish(run.id, outcome, new Date())]).toEqual([true, false]);

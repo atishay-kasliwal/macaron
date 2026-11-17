@@ -80,7 +80,7 @@ const OtherPlatform = Platform.exclude(["linux"]);
 /** Longest a run may take, in minutes. The controller derives how long run keys may live from it. */
 export const MAX_TIMEOUT_MINUTES = 360;
 
-/** Every setting a repo ends up with once global → project → repo are merged. */
+/** Every setting a repo ends up with once global → org → repo are merged. */
 export const RepoSettings = z.strictObject({
   harness: Harness,
   model: z.string().min(1),
@@ -106,10 +106,12 @@ export const RepoSettings = z.strictObject({
   environment: Environment,
   commands: Commands,
   contribution: Contribution,
+  /** The open-macaron/knowledge folder (`projects/<knowledge>`) whose rules and lessons apply; the org's login when unset. */
+  knowledge: Slug.optional(),
 });
 export type RepoSettings = z.infer<typeof RepoSettings>;
 
-/** A partial override, as written at project or repo level. Objects merge, arrays and scalars replace. */
+/** A partial override, as written in an org's defaults, a repository entry or the fallback. Objects merge, arrays and scalars replace. */
 export const RepoSettingsPatch = z.strictObject({
   harness: Harness.optional(),
   model: z.string().min(1).optional(),
@@ -126,6 +128,7 @@ export const RepoSettingsPatch = z.strictObject({
   environment: EnvironmentPatch.optional(),
   commands: Commands.optional(),
   contribution: Contribution.partial().optional(),
+  knowledge: Slug.optional(),
 });
 export type RepoSettingsPatch = z.infer<typeof RepoSettingsPatch>;
 
@@ -138,34 +141,41 @@ export const GlobalFile = z.strictObject({
 });
 export type GlobalFile = z.infer<typeof GlobalFile>;
 
-/** `config/projects/<project>/project.yaml` */
-export const ProjectFile = z.strictObject({
-  project: Slug,
-  owners: z.string().regex(/^@[A-Za-z0-9-]+\/[A-Za-z0-9-]+$/),
-  /** Review bots whose comments on the bot's pull requests count, for review loops only. */
-  bots: z.array(GitHubLogin).default([]),
-  budget: z.strictObject({ monthUsd: Usd }),
-  concurrency: z.int().min(1).max(50),
-  defaults: RepoSettingsPatch.default({}),
-});
-export type ProjectFile = z.infer<typeof ProjectFile>;
+const TeamRef = z.string().regex(/^@[A-Za-z0-9-]+\/[A-Za-z0-9-]+$/);
+
+/** A repository's name within its owner, as GitHub allows it. */
+export const RepoName = z.string().regex(/^[A-Za-z0-9._-]{1,100}$/, "not a repository name");
 
 /**
- * `config/projects/<project>/repos/<name>.yaml`. The bot's fork isn't configured: the controller
- * picks, creates and records it (REPOSITORIES.md §5), so a configuration can't point a repository at
- * another of the bot's repositories. `fork`, from before, is accepted and ignored until the files drop it.
+ * `config/orgs/<org>/org.yaml`: a GitHub owner (an organisation or a user) and its repositories.
+ * `id` is the owner's account id: the controller follows a rename by it, `org` is only its login
+ * when the file was written. Without a `fallback`, the bot works on the listed repositories only.
+ * There is no org budget: every run is billed to its payer's own key, under their monthly cap.
  */
-export const RepoFile = RepoSettingsPatch.extend({
-  repo: RepoSlug,
-  fork: z.string().optional().meta({ deprecated: true, description: "Ignored: the controller creates and records the bot's fork." }),
+export const OrgFile = z.strictObject({
+  org: GitHubLogin,
+  id: z.int().positive(),
+  owners: TeamRef,
+  /** Review bots whose comments on the bot's pull requests count, for review loops only. */
+  bots: z.array(GitHubLogin).default([]),
+  concurrency: z.int().min(1).max(50),
+  defaults: RepoSettingsPatch.default({}),
+  repos: z.record(RepoName, RepoSettingsPatch).default({}),
+  /** What the repositories it doesn't list get: any repository setting. */
+  fallback: z.union([z.literal(false), RepoSettingsPatch]).default(false),
 });
-export type RepoFile = z.infer<typeof RepoFile>;
+export type OrgFile = z.infer<typeof OrgFile>;
 
 /** What the controller works with for one repository. */
 export const RepoConfig = RepoSettings.extend({
   repo: RepoSlug,
-  project: Slug,
+  /** The org file's login, which the ledger and budgets are keyed by. */
+  org: GitHubLogin,
+  orgId: z.int().positive(),
+  knowledge: Slug,
   bots: z.array(GitHubLogin),
+  /** Not listed in its org's `repos`: configured by its `fallback`. */
+  fallback: z.boolean(),
 });
 export type RepoConfig = z.infer<typeof RepoConfig>;
 
@@ -182,11 +192,29 @@ export function applySettingsPatch(base: RepoSettings, patch: RepoSettingsPatch)
   return RepoSettings.parse(mergeSettings(seed, patch));
 }
 
-/** global → project → repo. Throws a ZodError naming the offending field if the result is invalid. */
-export function resolveRepoConfig(global: GlobalFile, project: ProjectFile, repo: RepoFile): RepoConfig {
-  const { repo: slug, fork: _ignored, ...repoPatch } = repo;
-  const settings = applySettingsPatch(applySettingsPatch(global.defaults, project.defaults), repoPatch);
-  return RepoConfig.parse({ ...settings, repo: slug, project: project.project, bots: project.bots });
+/** The org's own settings for `name`: listed, else its fallback's, else undefined. Throws a ZodError naming the offending field if the merge is invalid. */
+export function repoSettingsOf(global: GlobalFile, org: OrgFile, name: string): { settings: RepoSettings; fallback: boolean } | undefined {
+  const base = applySettingsPatch(global.defaults, org.defaults);
+  const listed = Object.entries(org.repos).find(([candidate]) => candidate.toLowerCase() === name.toLowerCase());
+  if (listed !== undefined) return { settings: applySettingsPatch(base, listed[1]), fallback: false };
+  if (org.fallback === false) return undefined;
+  return { settings: applySettingsPatch(base, org.fallback), fallback: true };
+}
+
+/** What the org's fallback gives every repository it doesn't list; undefined without a fallback. */
+export function fallbackSettings(global: GlobalFile, org: OrgFile): RepoSettings | undefined {
+  return repoSettingsOf(global, { ...org, repos: {} }, "")?.settings;
+}
+
+/**
+ * global → org defaults → the org's entry for the repository, or its fallback. `repo` keeps the
+ * caller's owner login, which follows a rename of the org. Undefined when the org doesn't take it.
+ */
+export function resolveRepoConfig(global: GlobalFile, org: OrgFile, repo: RepoSlug): RepoConfig | undefined {
+  const name = repo.slice(repo.indexOf("/") + 1);
+  const resolved = repoSettingsOf(global, org, name);
+  if (resolved === undefined) return undefined;
+  return RepoConfig.parse({ ...resolved.settings, repo, org: org.org, orgId: org.id, knowledge: resolved.settings.knowledge ?? org.org.toLowerCase(), bots: org.bots, fallback: resolved.fallback });
 }
 
 /** The runner label for `platform`, or undefined when the repository doesn't enable it. */
@@ -200,7 +228,7 @@ export function platformsOf(config: Pick<RepoSettings, "platforms">): Platform[]
 }
 
 /** Every file the configuration is made of; anything else in a published snapshot is rejected. */
-export const CONFIG_FILE_PATH = /^(?:global\.yaml|projects\/[a-z0-9]+(?:-[a-z0-9]+)*\/(?:project\.yaml|repos\/[A-Za-z0-9._-]{1,100}\.ya?ml))$/;
+export const CONFIG_FILE_PATH = /^(?:global\.yaml|orgs\/[A-Za-z0-9-]{1,39}\/org\.yaml)$/;
 
 /**
  * The configuration as open-macaron/config publishes it on GitHub Pages (`v1/config.json`): its

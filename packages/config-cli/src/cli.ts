@@ -6,6 +6,7 @@ import { checkOwnerLogins, mergeApproved, type Problem } from "@open-macaron/own
 import { Octokit } from "@octokit/rest";
 import { z } from "zod";
 import { configLayout } from "./layout.ts";
+import { checkOrgIds } from "./org-ids.ts";
 import { publish } from "./publish.ts";
 import { reservedPaths } from "./reserved.ts";
 import { loadRepository } from "./tree.ts";
@@ -13,8 +14,9 @@ import { loadRepository } from "./tree.ts";
 const USAGE = `config-cli <command>
 
   validate [DIR] [--check-logins]
-        check the configuration exactly as the controller does, and each project's OWNERS.yaml
-        (DIR defaults to .); --check-logins also asks GitHub that each owner's login matches their id
+        check the configuration exactly as the controller does, and each org's OWNERS.yaml
+        (DIR defaults to .); --check-logins also asks GitHub that each owner's login matches their
+        id, and each org file's login its id
   build DIR OUT --commit SHA
         write the snapshot GitHub Pages serves (v1/config.json) for the configuration in DIR
   merge --head-sha SHA --format-valid true|false
@@ -48,7 +50,8 @@ async function main(argv: readonly string[]): Promise<number> {
     case "validate": {
       const { values, positionals } = parseArgs({ args: [...rest], allowPositionals: true, options: { "check-logins": { type: "boolean", default: false } } });
       const repository = await loadRepository(positionals[0] ?? ".");
-      const problems = [...repository.problems, ...(values["check-logins"] ? await checkOwnerLogins(octokit(), repository.folders) : [])];
+      const checked = values["check-logins"] ? [...(await checkOwnerLogins(octokit(), repository.folders)), ...(await checkOrgIds(octokit(), repository.files))] : [];
+      const problems = [...repository.problems, ...checked];
       report(problems);
       return problems.length === 0 ? 0 : 1;
     }

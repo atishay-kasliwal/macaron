@@ -1,17 +1,18 @@
 import { readdir, readFile } from "node:fs/promises";
 import { join } from "node:path";
-import { CONFIG_FILE_PATH, GlobalFile, ProjectFile, type RepoConfig, RepoFile, resolveRepoConfig } from "./config.ts";
-import type { RepoSlug } from "./ids.ts";
+import { CONFIG_FILE_PATH, fallbackSettings, GlobalFile, OrgFile, type RepoConfig, resolveRepoConfig } from "./config.ts";
+import { RepoSlug } from "./ids.ts";
 import { parse as parseYaml } from "yaml";
 import { z } from "zod";
 
 export interface ConfigSnapshot {
   readonly global: GlobalFile;
-  readonly projects: ReadonlyMap<string, ProjectFile>;
-  /** Keyed by lower-cased `owner/name`: GitHub repository names are case-insensitive. */
+  /** Keyed by the owner's account id. */
+  readonly orgs: ReadonlyMap<number, OrgFile>;
+  /** The repositories the orgs list, under the logins their files name; keyed by lower-cased `owner/name`. */
   readonly repos: ReadonlyMap<string, RepoConfig>;
-  /** Each repository's file (`projects/<p>/repos/<r>.yaml`), keyed like `repos`. */
-  readonly repoFiles: ReadonlyMap<string, string>;
+  /** Each org's file (`orgs/<org>/org.yaml`), keyed by its id. */
+  readonly orgFiles: ReadonlyMap<number, string>;
 }
 
 export class ConfigTreeError extends Error {
@@ -29,17 +30,16 @@ export function repoKey(repo: RepoSlug | string): string {
   return repo.toLowerCase();
 }
 
-const PROJECT_FILE = /^projects\/([^/]+)\/project\.yaml$/;
-const REPO_FILE = /^projects\/([^/]+)\/repos\/[^/]+\.ya?ml$/;
+const ORG_FILE = /^orgs\/([^/]+)\/org\.yaml$/;
 
 /**
- * Validates a configuration given as its files (repository-relative path → content): `global.yaml`,
- * `projects/<p>/project.yaml` and `projects/<p>/repos/*.yaml`. The single validation path, for a
- * local `config/` tree and a published snapshot alike. Collects every problem, with its path, before failing.
+ * Validates a configuration given as its files (repository-relative path → content): `global.yaml`
+ * and `orgs/<org>/org.yaml`. The single validation path, for a local `config/` tree and a published
+ * snapshot alike. Collects every problem, with its path, before failing.
  */
 export function parseConfigTree(files: ReadonlyMap<string, string>): ConfigSnapshot {
   const problems: string[] = [];
-  // Sorted: which of two projects claiming the same repository is reported doesn't depend on the source.
+  // Sorted: which of two files claiming the same org is reported doesn't depend on the source.
   const paths = [...files.keys()].sort();
 
   function parseAs<T>(path: string, schema: z.ZodType<T>): T | undefined {
@@ -64,47 +64,64 @@ export function parseConfigTree(files: ReadonlyMap<string, string>): ConfigSnaps
   }
 
   for (const path of paths) {
-    if (!CONFIG_FILE_PATH.test(path)) problems.push(`${path}: not a configuration file (global.yaml, projects/<p>/project.yaml, projects/<p>/repos/<r>.yaml)`);
+    if (CONFIG_FILE_PATH.test(path)) continue;
+    problems.push(
+      path.startsWith("projects/")
+        ? `${path}: projects are gone: configure the repository in orgs/<org>/org.yaml`
+        : `${path}: not a configuration file (global.yaml, orgs/<org>/org.yaml)`,
+    );
   }
 
   const global = parseAs("global.yaml", GlobalFile);
-  const projects = new Map<string, ProjectFile>();
+  const orgs = new Map<number, OrgFile>();
+  const orgFiles = new Map<number, string>();
   const repos = new Map<string, RepoConfig>();
-  const repoFiles = new Map<string, string>();
+  const logins = new Set<string>();
 
-  const folders = new Set(paths.flatMap((path) => PROJECT_FILE.exec(path)?.[1] ?? REPO_FILE.exec(path)?.[1] ?? []));
-  for (const folder of [...folders].sort()) {
-    const projectFile = `projects/${folder}/project.yaml`;
-    const project = parseAs(projectFile, ProjectFile);
-    if (project === undefined) continue;
-    if (project.project !== folder) {
-      problems.push(`${projectFile}: project "${project.project}" must live in projects/${project.project}/`);
+  for (const path of paths) {
+    const folder = ORG_FILE.exec(path)?.[1];
+    if (folder === undefined || !CONFIG_FILE_PATH.test(path)) continue;
+    const org = parseAs(path, OrgFile);
+    if (org === undefined) continue;
+    if (org.org !== folder) {
+      problems.push(`${path}: org "${org.org}" must live in orgs/${org.org}/`);
       continue;
     }
-    projects.set(project.project, project);
+    const claimed = orgFiles.get(org.id);
+    if (claimed !== undefined) {
+      problems.push(`${path}: account ${String(org.id)} is already configured by ${claimed}`);
+      continue;
+    }
+    if (logins.has(org.org.toLowerCase())) {
+      problems.push(`${path}: ${org.org} is already configured`);
+      continue;
+    }
+    logins.add(org.org.toLowerCase());
+    orgs.set(org.id, org);
+    orgFiles.set(org.id, path);
+    if (global === undefined) continue;
 
-    for (const repoFile of paths.filter((path) => REPO_FILE.exec(path)?.[1] === folder)) {
-      const repo = parseAs(repoFile, RepoFile);
-      if (repo === undefined || global === undefined) continue;
-      const key = repoKey(repo.repo);
-      const owner = repos.get(key);
-      if (owner !== undefined) {
-        problems.push(`${repoFile}: ${repo.repo} is already configured by project "${owner.project}"`);
-        continue;
-      }
+    const merged = (what: string, resolve: () => void): void => {
       try {
-        repos.set(key, resolveRepoConfig(global, project, repo));
-        repoFiles.set(key, repoFile);
+        resolve();
       } catch (error: unknown) {
         const detail =
           error instanceof z.ZodError ? error.issues.map((issue) => `${issue.path.join(".")}: ${issue.message}`).join("; ") : String(error);
-        problems.push(`${repoFile}: after merging defaults: ${detail}`);
+        problems.push(`${path}: ${what}: after merging defaults: ${detail}`);
       }
+    };
+    for (const name of Object.keys(org.repos)) {
+      merged(`repos.${name}`, () => {
+        const config = resolveRepoConfig(global, org, RepoSlug.parse(`${org.org}/${name}`));
+        if (config !== undefined) repos.set(repoKey(config.repo), config);
+      });
     }
+    // The fallback is checked now, not when a repository first needs it.
+    if (org.fallback !== false) merged("fallback", () => fallbackSettings(global, org));
   }
 
   if (global === undefined || problems.length > 0) throw new ConfigTreeError(problems);
-  return { global, projects, repos, repoFiles };
+  return { global, orgs, repos, orgFiles };
 }
 
 /** Reads a local `config/` tree (only the files the layout defines), then validates it with {@link parseConfigTree}. */
@@ -120,12 +137,12 @@ export async function readConfigFiles(dir: string): Promise<Map<string, string>>
     if (content !== undefined) files.set(path, content);
   };
   await add("global.yaml");
+  for (const org of await readdir(join(dir, "orgs"), { withFileTypes: true }).catch(() => [])) {
+    if (org.isDirectory()) await add(`orgs/${org.name}/org.yaml`);
+  }
+  // A leftover projects/ tree is reported, not silently ignored.
   for (const project of await readdir(join(dir, "projects"), { withFileTypes: true }).catch(() => [])) {
-    if (!project.isDirectory()) continue;
-    await add(`projects/${project.name}/project.yaml`);
-    for (const repo of await readdir(join(dir, "projects", project.name, "repos"), { withFileTypes: true }).catch(() => [])) {
-      if (repo.isFile() && /\.ya?ml$/.test(repo.name)) await add(`projects/${project.name}/repos/${repo.name}`);
-    }
+    if (project.isDirectory()) await add(`projects/${project.name}/project.yaml`);
   }
   return files;
 }

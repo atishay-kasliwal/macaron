@@ -3,7 +3,7 @@ import { type ConfigSnapshot, loadConfigTree, type RepoConfig, RepoSlug } from "
 import { beforeAll, describe, expect, it } from "vitest";
 import { BotIdentity } from "../../src/github/bot-identity.ts";
 import { createGitHub } from "../../src/github/github.ts";
-import { ProjectsService } from "../../src/publish/projects.service.ts";
+import { OrgsService } from "../../src/publish/orgs.service.ts";
 import { testEnv } from "../support/env.ts";
 import { FakeClock } from "../support/fakes.ts";
 import { fixedConfig, forkRegistry, MemoryForkStore } from "../support/forks.ts";
@@ -28,26 +28,39 @@ beforeAll(async () => {
   config = found;
 });
 
-function service(tree: ConfigSnapshot, store: MemoryForkStore): ProjectsService {
+function service(tree: ConfigSnapshot, store: MemoryForkStore): OrgsService {
   const repoConfig = fixedConfig(env, tree);
   const registry = forkRegistry({ gh, bot: new FixedIdentity(gh, gh, gh, env), env, clock: new FakeClock(), store, config: repoConfig });
-  return new ProjectsService(repoConfig, registry);
+  return new OrgsService(repoConfig, registry);
 }
 
-/** The fixtures' projects, with `repos` as the only repositories. */
+/** The fixtures' orgs, with `repos` as the only listed repositories. */
 function withRepos(...repos: readonly RepoConfig[]): ConfigSnapshot {
   return { ...snapshot, repos: new Map(repos.map((repo) => [repo.repo.toLowerCase(), repo])) };
 }
 
-describe("ProjectsService", () => {
-  it("lists every repository, by project", async () => {
+describe("OrgsService", () => {
+  it("lists every listed repository, by org", async () => {
     const { rows, nextCursor } = await service(snapshot, new MemoryForkStore()).page(100, undefined);
 
     expect(rows.filter((row) => row.repo !== null)).toHaveLength(snapshot.repos.size);
-    expect(new Set(rows.map((row) => row.project))).toEqual(new Set(snapshot.projects.keys()));
-    const seen = rows.map((row) => row.project).filter((project, index, all) => project !== all[index - 1]);
-    expect(seen).toHaveLength(snapshot.projects.size);
+    expect(new Set(rows.map((row) => row.org))).toEqual(new Set([...snapshot.orgs.values()].map((org) => org.org)));
+    const seen = rows.map((row) => row.org).filter((org, index, all) => org !== all[index - 1]);
+    expect(seen).toHaveLength(snapshot.orgs.size);
+    expect(rows.every((row) => !row.fallback)).toBe(true);
     expect(nextCursor).toBeNull();
+  });
+
+  it("lists a repository the org's fallback onboarded once its fork is ready, and no other", async () => {
+    const store = new MemoryForkStore().ready("podman-desktop/extension-kind", "abc123-extension-kind").ready("redhat-developer/unlisted", "def456-unlisted");
+
+    const { rows } = await service(snapshot, store).page(100, undefined);
+
+    expect(rows.filter((row) => row.fallback)).toEqual([
+      { org: "podman-desktop", repo: "podman-desktop/extension-kind", fork: "macaron-bot/abc123-extension-kind", fallback: true },
+    ]);
+    // redhat-developer has no fallback: its fork, left from before, isn't listed.
+    expect(rows.some((row) => row.repo === "redhat-developer/unlisted")).toBe(false);
   });
 
   it("walks every row once, whatever the page size", async () => {
@@ -74,15 +87,15 @@ describe("ProjectsService", () => {
 
     const listed = rows.filter((row) => row.repo !== null);
     expect(listed).toEqual([
-      { project: config.project, repo: UPSTREAM, fork: "macaron-bot/abc123-foobar-tmp-demo" },
-      { project: config.project, repo: "org-x/not-ready", fork: null },
+      { org: config.org, repo: UPSTREAM, fork: "macaron-bot/abc123-foobar-tmp-demo", fallback: false },
+      { org: config.org, repo: "org-x/not-ready", fork: null, fallback: false },
     ]);
   });
 
-  it("gives a project without repositories a row of its own", async () => {
+  it("gives an org without repositories a row of its own", async () => {
     const { rows } = await service(withRepos(), new MemoryForkStore()).page(100, undefined);
 
-    expect(rows).toHaveLength(snapshot.projects.size);
+    expect(rows).toHaveLength(snapshot.orgs.size);
     expect(rows.every((row) => row.repo === null && row.fork === null)).toBe(true);
   });
 
@@ -91,7 +104,7 @@ describe("ProjectsService", () => {
 
     const { rows } = await service(withRepos(config), store).page(100, undefined);
 
-    expect(rows.filter((row) => row.repo !== null)).toEqual([{ project: config.project, repo: UPSTREAM, fork: null }]);
+    expect(rows.filter((row) => row.repo !== null)).toEqual([{ org: config.org, repo: UPSTREAM, fork: null, fallback: false }]);
   });
 
   it("matches a fork whatever the case of the configured name, and keeps that case", async () => {
@@ -100,6 +113,6 @@ describe("ProjectsService", () => {
 
     const { rows } = await service(withRepos(mixed), store).page(100, undefined);
 
-    expect(rows.filter((row) => row.repo !== null)).toEqual([{ project: config.project, repo: "Axel7083/Foobar-Tmp-Demo", fork: "macaron-bot/abc123-foobar-tmp-demo" }]);
+    expect(rows.filter((row) => row.repo !== null)).toEqual([{ org: config.org, repo: "Axel7083/Foobar-Tmp-Demo", fork: "macaron-bot/abc123-foobar-tmp-demo", fallback: false }]);
   });
 });

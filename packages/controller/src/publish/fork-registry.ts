@@ -4,7 +4,7 @@ import { InjectDrizzle } from "@nestjs/drizzle";
 import { type ConfigSnapshot, type RepoConfig, repoKey, type RepoSlug } from "@open-macaron/contracts";
 import { and, eq, isNotNull, isNull, ne } from "drizzle-orm";
 import { z } from "zod";
-import { DomainError } from "../common/errors.ts";
+import { describeError, DomainError } from "../common/errors.ts";
 import { OnboardingNotice } from "../config/onboarding-notice.ts";
 import { RepoConfigService } from "../config/repo-config.service.ts";
 import type { Db } from "../db/db.module.ts";
@@ -92,6 +92,7 @@ const Repository = z.object({
   full_name: z.string(),
   html_url: z.url(),
   private: z.boolean(),
+  archived: z.boolean().default(false),
   fork: z.boolean(),
   owner: z.object({ id: z.int(), login: z.string() }),
   // The root of the fork network, on forks only.
@@ -171,6 +172,8 @@ export class ForkRegistry implements OnApplicationBootstrap {
    */
   async ensure(config: RepoConfig): Promise<EnsuredFork> {
     const upstream = await this.upstream(config.repo);
+    // The org file names its owner by account id: a login renamed, then taken by someone else, isn't it.
+    if (upstream.owner.id !== config.orgId) throw new ForkUnavailable(`${upstream.full_name} doesn't belong to account ${String(config.orgId)} (${config.org})`);
     const network = upstream.source?.id ?? upstream.id;
     const known = await this.store.byUpstream(upstream.id);
     const fork = (known === undefined ? undefined : await this.byId(known.forkId)) ?? (await this.create(config.repo));
@@ -181,6 +184,28 @@ export class ForkRegistry implements OnApplicationBootstrap {
     await this.secure(fork);
     const firstReady = await this.store.markReady(upstream.id);
     return { fork: { owner: fork.owner.login, repo: fork.name }, url: fork.html_url, firstReady };
+  }
+
+  /**
+   * The fork a run needs now, created on demand when the configuration didn't onboard the
+   * repository (an org's fallback, which doesn't list it). Undefined while GitHub is still creating
+   * it; throws ForkUnavailable when none can be used.
+   */
+  async forRun(config: RepoConfig): Promise<RepoRef | undefined> {
+    const ready = await this.of(config.repo);
+    if (ready !== undefined) return ready;
+    try {
+      const ensured = await this.ensure(config);
+      if (ensured.firstReady) {
+        this.logger.log(`${config.repo}: fork ${ensured.url} ready, on demand`);
+        if (!config.fallback) await this.notice.onboarded(config.repo, ensured.url);
+      }
+      return ensured.fork;
+    } catch (error: unknown) {
+      if (error instanceof ForkUnavailable) throw error;
+      this.logger.warn(`${config.repo}: fork not ready yet: ${describeError(error)}`);
+      return undefined;
+    }
   }
 
   /** The job: ensure, then tell the configuration's pull request how it went. */
@@ -214,6 +239,7 @@ export class ForkRegistry implements OnApplicationBootstrap {
     }
     const upstream = Repository.parse(data);
     if (upstream.private) throw new ForkUnavailable(`${slug} isn't public`);
+    if (upstream.archived) throw new ForkUnavailable(`${slug} is archived`);
     return upstream;
   }
 

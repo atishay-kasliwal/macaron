@@ -3330,9 +3330,9 @@
         ]
       }
     },
-    "/v1/projects": {
+    "/v1/orgs": {
       "get": {
-        "operationId": "listProjects",
+        "operationId": "listOrgs",
         "parameters": [
           {
             "name": "after",
@@ -3368,7 +3368,7 @@
                       "items": {
                         "type": "object",
                         "properties": {
-                          "project": {
+                          "org": {
                             "type": "string"
                           },
                           "repo": {
@@ -3380,12 +3380,16 @@
                             "nullable": true,
                             "type": "string",
                             "pattern": "^[A-Za-z0-9-]{1,39}\\/[A-Za-z0-9._-]{1,100}$"
+                          },
+                          "fallback": {
+                            "type": "boolean"
                           }
                         },
                         "required": [
-                          "project",
+                          "org",
                           "repo",
-                          "fork"
+                          "fork",
+                          "fallback"
                         ],
                         "additionalProperties": false
                       }
@@ -3413,9 +3417,9 @@
             "cookie": []
           }
         ],
-        "summary": "A page of the configured projects' repositories, each with its fork once it is ready",
+        "summary": "A page of the configured orgs' repositories, each with its fork once it is ready",
         "tags": [
-          "projects"
+          "orgs"
         ]
       }
     }

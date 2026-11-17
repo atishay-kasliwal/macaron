@@ -72,7 +72,10 @@ class FixedIdentity extends BotIdentity {
 function repoConfig(compact: boolean): RepoConfig {
   return RepoConfig.parse({
     repo: "org-x/repo-a",
-    project: "sandbox",
+    org: "org-x",
+    orgId: 1,
+    knowledge: "sandbox",
+    fallback: false,
     bots: [],
     harness: "claude",
     model: "anthropic/claude-sonnet-5.5",
@@ -176,7 +179,7 @@ describe("Publisher in compact mode", () => {
     const { thread, run, writer, publisher } = await dispatched();
     await publisher.publish({ run, thread, config: repoConfig(true), publishable: publishable(), runUrl: RUN_URL });
 
-    await runs.settle(run.id, 260_000, { repo: thread.repo, project: "sandbox" }, new Date());
+    await runs.settle(run.id, 260_000, { repo: thread.repo, org: "sandbox" }, new Date());
     await publisher.refreshCost(thread, run);
 
     expect(writer.bodies()).toHaveLength(1);
@@ -187,7 +190,7 @@ describe("Publisher in compact mode", () => {
     const { thread, run, writer, publisher } = await dispatched();
     await publisher.publish({ run, thread, config: repoConfig(true), publishable: publishable(), runUrl: RUN_URL });
 
-    await runs.settle(run.id, 0, { repo: thread.repo, project: "sandbox" }, new Date(), 1_234_567);
+    await runs.settle(run.id, 0, { repo: thread.repo, org: "sandbox" }, new Date(), 1_234_567);
     await publisher.refreshCost(thread, run);
 
     expect(writer.bodies()).toHaveLength(1);

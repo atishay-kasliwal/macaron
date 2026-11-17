@@ -37,7 +37,7 @@ import { ArtifactDownloader, ArtifactInvalid, readArtifact } from "./artifact.ts
 import { OidcVerifier } from "./oidc-verifier.ts";
 import { runLimitTokens, runLimitUsd, tokenBudgetExhausted } from "./run-limit.ts";
 import { runUrl } from "./run-url.ts";
-import { type RunRecord, RunsRepository, type ThreadRecord } from "./runs.repository.ts";
+import { type LedgerAttribution, type RunRecord, RunsRepository, type ThreadRecord } from "./runs.repository.ts";
 
 export interface LaunchRequest {
   readonly config: RepoConfig;
@@ -285,7 +285,7 @@ export class RunLauncher {
     }
     const thread = await this.runs.threadById(run.threadId);
     const config = this.config.repo(thread.repo);
-    const attribution = config === undefined ? { repo: thread.repo, project: "unknown" } : this.attribution(config);
+    const attribution = config === undefined ? { repo: thread.repo, org: "unknown" } : this.attribution(config);
     // Read before the key is revoked: every run's tokens are kept, a free one's being all it shows.
     const tokens = key === undefined ? undefined : await this.budget.tokenUsage(key);
     if (await this.runs.settle(run.id, decision.costMicros, attribution, now, tokens?.used ?? null)) {
@@ -343,10 +343,6 @@ export class RunLauncher {
     const repoCommitted = (await this.runs.spentOnRepoSince(thread.repo, monthStart(now))) + (await this.runs.reservedMicros({ repo: thread.repo }));
     if (repoCommitted + limit > toMicros(caps.perRepoMonthUsd)) return refused("this repository reached its monthly budget");
 
-    const project = this.config.snapshot.projects.get(config.project);
-    if (project !== undefined && (await this.runs.spentOnProjectSince(project.project, monthStart(now))) + limit > toMicros(project.budget.monthUsd)) {
-      return refused("this project reached its monthly budget");
-    }
     const overCap = await this.caps.refusal(asker.userId, limit, `${this.env.PUBLIC_URL}/settings/key`);
     if (overCap !== undefined) return refused(overCap);
     if ((await this.runs.activeCount()) >= this.config.snapshot.global.concurrency.global) {
@@ -384,7 +380,7 @@ export class RunLauncher {
     return details.data.workflow_run_id;
   }
 
-  private attribution(config: RepoConfig): { repo: string; project: string } {
-    return { repo: config.repo, project: config.project };
+  private attribution(config: RepoConfig): LedgerAttribution {
+    return { repo: config.repo, org: config.org };
   }
 }

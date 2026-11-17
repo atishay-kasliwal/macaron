@@ -1,9 +1,0 @@
-# yaml-language-server: $schema=../../../../../../schemas/config-repo.schema.json
-#
-# podman-desktop/extension-kreate.
-
-repo: podman-desktop/extension-kreate
-commands:
-  build: pnpm build
-  test: pnpm test:unit
-  lint: pnpm lint:check

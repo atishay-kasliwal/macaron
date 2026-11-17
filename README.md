@@ -6,7 +6,7 @@
 
 ## What the bot can do
 
-Only people with an account of its web app (invited by an administrator, who grants each one capabilities: triage, plan, implement, reproduce, verify, review, remember; at their first visit, the app walks them through the bot, the commands they may use, and their key) can trigger it, on trusted repositories ([open-macaron/config](https://github.com/open-macaron/config)). Anyone else who mentions it on a trusted repository gets 👎 and nothing more: no reply, no cost; asking for something one's account can't is refused with a reply. It answers with 👀 within a minute, then 👍 or 😕, and answers each request where it was asked, with one comment: its run, runner and cost in a small footer, edited until the cost settles. A failure always gets a comment saying why. A project or repository can turn `compact` off to get a status comment as soon as a run starts. `implement`, `plan` and `reproduce` work from an issue; `verify` and `review` on a pull request.
+Only people with an account of its web app (invited by an administrator, who grants each one capabilities: triage, plan, implement, reproduce, verify, review, remember; at their first visit, the app walks them through the bot, the commands they may use, and their key) can trigger it, on trusted repositories ([open-macaron/config](https://github.com/open-macaron/config)). Anyone else who mentions it on a trusted repository gets 👎 and nothing more: no reply, no cost; asking for something one's account can't is refused with a reply. It answers with 👀 within a minute, then 👍 or 😕, and answers each request where it was asked, with one comment: its run, runner and cost in a small footer, edited until the cost settles. A failure always gets a comment saying why. An organisation or repository can turn `compact` off to get a status comment as soon as a run starts. `implement`, `plan` and `reproduce` work from an issue; `verify` and `review` on a pull request.
 
 | Comment | What happens |
 |---|---|
@@ -24,7 +24,7 @@ Only people with an account of its web app (invited by an administrator, who gra
 
 **Reviews check one thing per rule.** A violation is only reported with a quote of a line the pull request adds; the reviewer reads code and history but can't change or run anything. The same review runs locally, before you push, with your own agent: `npx @open-macaron/review --project <project>` ([packages/review](packages/review/README.md)).
 
-**Cost.** Every run is billed to the LLM key of whoever asked for it, saved in the web app under an optional monthly cap, through its own Bifrost key capped at the mode's budget and limited to the run's models. Without a saved key, the bot answers a mention with a refusal that links to the key page. The cost of each loop is reported: in a table at the end of the bot's pull requests, and in each review. Per-thread, per-repository and per-project monthly caps stop the bot before it spends more.
+**Cost.** Every run is billed to the LLM key of whoever asked for it, saved in the web app under an optional monthly cap, through its own Bifrost key capped at the mode's budget and limited to the run's models. Without a saved key, the bot answers a mention with a refusal that links to the key page. The cost of each loop is reported: in a table at the end of the bot's pull requests, and in each review. Per-thread and per-repository monthly caps stop the bot before it spends more.
 
 ## How it works
 
@@ -44,7 +44,7 @@ Read [docs/DESIGN.md](docs/DESIGN.md) first; [docs/SCALING.md](docs/SCALING.md),
 | `packages/review` | The review engine of `@macaron-bot review`, also the `macaron-review` CLI to run the same review locally ([README](packages/review/README.md)) |
 | `packages/owners` | The owner-approved merge (`OWNERS.yaml` per folder) shared by knowledge-cli and config-cli |
 | `packages/knowledge-cli` | Validation, owner-approved merges and the read API of open-macaron/knowledge |
-| `packages/config-cli` | Validation, owner-approved merges and the published snapshot of [open-macaron/config](https://github.com/open-macaron/config), which holds the trusted projects, repositories, review bots and budgets |
+| `packages/config-cli` | Validation, owner-approved merges and the published snapshot of [open-macaron/config](https://github.com/open-macaron/config), which holds the trusted organisations and repositories, review bots and budgets |
 | `deploy/` | OpenShift manifests and scripts, Bifrost's config and the local stack ([DEPLOYMENT.md](docs/DEPLOYMENT.md)) |
 | `docs/` | Design documents |
 

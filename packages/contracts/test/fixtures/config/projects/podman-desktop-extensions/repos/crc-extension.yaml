@@ -1,9 +1,0 @@
-# yaml-language-server: $schema=../../../../../../schemas/config-repo.schema.json
-#
-# crc-org/crc-extension.
-
-repo: crc-org/crc-extension
-commands:
-  build: pnpm build
-  test: pnpm test
-  lint: pnpm lint:check

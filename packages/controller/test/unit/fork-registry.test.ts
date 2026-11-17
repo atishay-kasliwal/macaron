@@ -14,6 +14,8 @@ const API = "https://api.github.com";
 const UPSTREAM = "axel7083/foobar-tmp-demo";
 const UPSTREAM_ID = 10;
 const BOT_ID = 7;
+// axel7083's account id, as orgs/axel7083/org.yaml names it.
+const OWNER_ID = 42176370;
 const server = setupServer();
 const env = testEnv();
 const gh = createGitHub("test", "token", env.GITHUB_API_VERSION, { throttled: false });
@@ -56,7 +58,7 @@ function repository(id: number, owner: { login: string; id: number }, name: stri
   };
 }
 
-const upstream = (extra: Record<string, unknown> = {}) => repository(UPSTREAM_ID, { login: "axel7083", id: 1 }, "foobar-tmp-demo", extra);
+const upstream = (extra: Record<string, unknown> = {}) => repository(UPSTREAM_ID, { login: "axel7083", id: OWNER_ID }, "foobar-tmp-demo", extra);
 const botFork = (name: string, extra: Record<string, unknown> = {}) =>
   repository(99, { login: "macaron-bot", id: BOT_ID }, name, { fork: true, source: { id: UPSTREAM_ID }, has_wiki: false, has_issues: false, has_projects: false, ...extra });
 
@@ -172,5 +174,36 @@ describe("ForkRegistry.ensure", () => {
 
     server.use(http.get(`${API}/repos/${UPSTREAM}`, () => HttpResponse.json({ message: "Not Found" }, { status: 404 })));
     await expect(registry().forks.ensure(config)).rejects.toBeInstanceOf(ForkUnavailable);
+  });
+
+  it("refuses an archived upstream", async () => {
+    server.use(http.get(`${API}/repos/${UPSTREAM}`, () => HttpResponse.json(upstream({ archived: true }))));
+
+    await expect(registry().forks.ensure(config)).rejects.toThrow(/is archived/);
+  });
+
+  it("refuses an upstream another account owns now, under the org's old login", async () => {
+    server.use(http.get(`${API}/repos/${UPSTREAM}`, () => HttpResponse.json(repository(UPSTREAM_ID, { login: "axel7083", id: 666 }, "foobar-tmp-demo"))));
+
+    await expect(registry().forks.ensure(config)).rejects.toThrow(/doesn't belong to account 42176370/);
+  });
+});
+
+describe("ForkRegistry.forRun", () => {
+  it("creates a fallback repository's fork on demand, then answers it", async () => {
+    const api = github({});
+    const { forks } = registry();
+    const fallback = { ...config, fallback: true };
+
+    expect(await forks.forRun(fallback)).toEqual({ owner: "macaron-bot", repo: api.requested() });
+    expect(await forks.forRun(fallback)).toEqual({ owner: "macaron-bot", repo: api.requested() });
+  });
+
+  it("answers nothing while GitHub is still creating the fork, and throws when there can be none", async () => {
+    github({ secured: false });
+    expect(await registry().forks.forRun(config)).toBeUndefined();
+
+    server.use(http.get(`${API}/repos/${UPSTREAM}`, () => HttpResponse.json(upstream({ archived: true }))));
+    await expect(registry().forks.forRun(config)).rejects.toBeInstanceOf(ForkUnavailable);
   });
 });

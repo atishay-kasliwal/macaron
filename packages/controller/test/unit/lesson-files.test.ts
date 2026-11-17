@@ -3,7 +3,7 @@ import { describe, expect, it } from "vitest";
 import { parse } from "yaml";
 import { folderOfLearning, folderOfScope, lessonFile, slugOf } from "../../src/knowledge/lesson-files.ts";
 
-const config = { project: Slug.parse("podman-desktop"), repo: RepoSlug.parse("axel7083/podman-desktop") };
+const config = { knowledge: Slug.parse("podman-desktop"), repo: RepoSlug.parse("axel7083/podman-desktop") };
 const learning = Learning.parse({
   scope: "project",
   topic: "Windows Podman machine providers",
