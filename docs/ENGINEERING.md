@@ -50,11 +50,11 @@ flowchart LR
   HTTP["HttpModule<br/>Bootstrap, Webhook, Health controllers"] --> RUNS
   ING["IngestModule<br/>NotificationsPoller, IngestService,<br/>ThreadWorker, ContextBuilder, ThreadStates"] --> RUNS
   RUNS["RunsModule<br/>RunLauncher, OidcVerifier,<br/>ArtifactDownloader, Housekeeping"] --> BUD["BudgetModule<br/>RunKeys (BifrostKeys),<br/>BudgetService"]
-  RUNS --> PUB["PublishModule<br/>Publisher, ForkCommitter, UpstreamWriter,<br/>ReactionTargets, EvidenceHost, KnowledgeProposer,<br/>ForkRegistry, OnboardingNotice, ProjectsService"]
+  RUNS --> PUB["PublishModule<br/>Publisher, ForkCommitter, UpstreamWriter,<br/>ReactionTargets, EvidenceHost, KnowledgeProposer,<br/>ForkRegistry, OnboardingNotice, OrgsService"]
   RUNS --> REV["ReviewModule<br/>KnowledgeClient, PullDiffReader"]
   ING --> PUB
   ING --> REV
-  CORE["CoreModule (global)<br/>RepoConfigService, PublishedConfigClient, ConfigSnapshotStore, ConfigUpdates,<br/>Jobs, BotIdentity, RunsRepository, EventsRepository, PollStateStore"]
+  CORE["CoreModule (global)<br/>RepoConfigService, OwnerLogins, PublishedConfigClient, ConfigSnapshotStore, ConfigUpdates,<br/>Jobs, BotIdentity, RunsRepository, EventsRepository, PollStateStore"]
   HTTP --> ACC["AccountsModule<br/>SessionsService (better-auth), InvitationsService,<br/>UsersService, UsageService"]
 ```
 

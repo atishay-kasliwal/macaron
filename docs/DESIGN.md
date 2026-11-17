@@ -249,7 +249,7 @@ class BudgetService {
 - **Start-up checks.** Bifrost's admin credentials are checked when the controller starts, and its prices come from `LLM_PRICING_FILE`: every model the configuration uses must be priced, or free and capped by tokens.
 - **Costs are settled in two phases.** Bifrost reports a key's usage asynchronously (it writes spend every 10 s). At completion the key is frozen and the result is published immediately. A `settle-cost` job runs after `usageLagMs` (15 s), writes the final cost to the ledger once, deletes the key and refreshes the PR's cost table, where the loop shows "settling…" until then. A run's whole limit counts against the caps until it is settled, so nothing can overshoot in between.
 
-- Caps exist at six levels: per-run key limit (and token ceiling on free models), per thread, per repo per month, per project per month, each user's own monthly caps on their key (dollars, and tokens on free models, 500M unless they change it), and global concurrency. There is also a kill switch (`MACARON_ENABLED`): no polling, no new run; runs already going finish.
+- Caps exist at six levels: per-run key limit (and token ceiling on free models), per thread, per repo per month, per org per month (plus a pooled monthly budget for the repositories an org doesn't list), each user's own monthly caps on their key (dollars, and tokens on free models, 500M unless they change it), and global concurrency. There is also a kill switch (`MACARON_ENABLED`): no polling, no new run; runs already going finish.
 - Every run key expires on its own (`expires_at` = timeout + 15 min). A `sweep-keys` pg-boss cron job deletes leftovers, as a safety net: keys of unsettled runs are kept until they are older than the longest allowed run plus grace and settlement (`KEY_MAX_AGE_MS`, derived from `MAX_TIMEOUT_MINUTES`). Each run's fast model is stored at launch with its model, since its key allows only those two.
 - The last request can overshoot a key's limit a little, so harness `max_tokens` stays bounded. Bifrost checks the budget before a request and charges it after, with no reservation, so parallel requests can each overshoot; its per-key request limit is counted the same way and doesn't stop a burst. The bound is Bifrost's per-provider cap, one provider per endpoint: 16 requests in flight plus 16 queued, the rest dropped (measured: a burst of 40 ran 32).
 - **Bifrost only charges priced models, so a free one is capped by tokens.** A model without a price costs $0, so its USD budget would never trigger. `deploy/bifrost/pricing.json` prices every allowed model, or marks it `"free": true` with `max_run_tokens`: a zero price without that mark is a forgotten one and is refused. The controller refuses to start when Bifrost can't price a configured model, or to apply a reloaded configuration, and `BifrostKeys` still refuses to mint a key for a model without an entry it can bill. The key page offers priced and free models, labelling the free ones. A run whose key allows a free model gets `token_max_limit` on that key, the smallest `max_run_tokens` among them, next to its USD budget: Bifrost checks it before a request and counts tokens after it, cache reads included, so one request in flight can overshoot, and a request over the cap gets 429. A run on free models alone never bills anything, so it settles at $0 at once. A run that fails, or is timed out by the watchdog, with its key at the cap says so in the thread (`its token budget was exhausted (…)`) instead of a bare conclusion.
@@ -312,7 +312,7 @@ interface RunResult {
 
 `macaron-agent finish` checks the result before it leaves the runner. Besides the schema, `.github/` and CRLF, it refuses a result that would read badly once published: an attachment no text places (the publisher shows one only where `attachment:<id>` is), or a reply to anything but a review comment (only those are threaded; any other is quoted after the message). The agent's own calls get the exact change to make; the last call, after the session, repairs instead of failing the run: unplaced attachments are added after the message (or the PR body), and an unthreadable reply becomes the message when there is none.
 
-The configuration lives in its own repository, [`open-macaron/config`](https://github.com/open-macaron/config). Each project folder's owners approve its changes (`OWNERS.yaml`, merged by `config-cli` like knowledge), and the platform team approves changes to who can trigger the bot and what it may spend or run on. A merge publishes a snapshot on GitHub Pages; the controller reloads it on the Pages deployment's webhook, without a deploy, and applies it only if it's valid (DEPLOYMENT.md §6). It holds, per global/project/repo level, the review bots whose comments count, harness and model, environment, budgets and caps (SCALING.md §2). Who may trigger the bot isn't there: it is an account of the web app, invited by an administrator, with the capabilities they granted (§7).
+The configuration lives in its own repository, [`open-macaron/config`](https://github.com/open-macaron/config). Each org folder's owners approve its changes (`OWNERS.yaml`, merged by `config-cli` like knowledge), and the platform team approves changes to who can trigger the bot and what it may spend or run on. A merge publishes a snapshot on GitHub Pages; the controller reloads it on the Pages deployment's webhook, without a deploy, and applies it only if it's valid (DEPLOYMENT.md §6). It holds, per global/org/repo level, the review bots whose comments count, harness and model, environment, budgets and caps (SCALING.md §2). Who may trigger the bot isn't there: it is an account of the web app, invited by an administrator, with the capabilities they granted (§7).
 
 ### Environments and configuration
 
@@ -321,7 +321,7 @@ There is one workflow, `open-macaron/runner/.github/workflows/run.yml`. Each rep
 - **own:** a folder in `runner` owned by the repo's team;
 - **upstream:** shipped in the upstream repo and read at the base SHA, for example Podman Desktop itself.
 
-Configuration is a hierarchy, `global.yaml` → `projects/<p>/project.yaml` → `projects/<p>/repos/<r>.yaml` in open-macaron/config. The project is the unit for budget and ownership. The full reasoning, examples and scaling limits are in [SCALING.md](SCALING.md).
+Configuration is a hierarchy in open-macaron/config, `global.yaml` → `orgs/<org>/org.yaml` (its `defaults`, then the repository's entry, or the `fallback` for a repository of the org it doesn't list). The org, one GitHub owner matched by account id, is the unit for budget and ownership. The full reasoning, examples and scaling limits are in [SCALING.md](SCALING.md).
 
 ### Evidence: screenshots and videos
 
@@ -394,7 +394,7 @@ sequenceDiagram
 
 Comment discipline:
 1. Threaded replies to review comments first.
-2. Then one answer per loop, posted where the request was made, right after it. It depends on the `compact` setting (open-macaron/config, global → project → repo, `true` unless set):
+2. Then one answer per loop, posted where the request was made, right after it. It depends on the `compact` setting (open-macaron/config, global → org → repo, `true` unless set):
    - `compact: true` (default): nothing is posted while the run works; 👀 says it started. The answer is the run's message, or its summary (✅) when it has none, or the review for a review run. It ends with a footer in `<sub>`: loop, mode, runner, run link with its id, lessons, and the thread's spending, whose line settlement edits. It also shows the tokens the thread's runs used (`$0.26 and 3.4M tokens`), all a run on free models shows at $0: settlement reads each run's key counter, which Bifrost keeps on every rate limit, capped or not, and keeps it in `runs.tokens_used`. One notification per request.
    - `compact: false`: a status comment, created when the run starts (⏳ and its run link) and edited when it ends (outcome, cost), and the message as a second comment.
    
@@ -439,7 +439,7 @@ knowledge/
 │   ├── OWNERS.yaml              the platform team
 │   ├── rules/<slug>.md          every repo (commit messages, PR etiquette)
 │   └── lessons/<topic>.md       working with macaron, harness tips
-├── projects/<project>/          same names as open-macaron/config's projects/<project>
+├── projects/<project>/          named by a repository's `knowledge` in open-macaron/config (the org's login by default)
 │   ├── OWNERS.yaml
 │   ├── rules/<slug>.md
 │   ├── rules/<category>/<slug>.md   optional grouping: tests/, svelte/, …
@@ -451,7 +451,7 @@ knowledge/
     └── lessons/<topic>.md
 ```
 
-A rule's scope comes from its folder, never from a field its author picks: rules in `projects/a/` only reach project `a`'s repositories. A rule's id is `<scope>/<slug>`, or `<scope>/<category>/<slug>` for a rule filed in a category folder (ESLint-style ids such as `podman-desktop/tests/prefer-reset-all-mocks`). `<scope>` is `global`, the project name or `<owner>/<repo>`; `<slug>` is the file name. Categories are one kebab-case level, in any owned folder, and can't be named `lessons` (lesson ids are `<scope>/lessons/<topic>`). The index is generated from front matter, never committed.
+A rule's scope comes from its folder, never from a field its author picks: rules in `projects/a/` only reach the repositories whose `knowledge` is `a`. A rule's id is `<scope>/<slug>`, or `<scope>/<category>/<slug>` for a rule filed in a category folder (ESLint-style ids such as `podman-desktop/tests/prefer-reset-all-mocks`). `<scope>` is `global`, the project name or `<owner>/<repo>`; `<slug>` is the file name. Categories are one kebab-case level, in any owned folder, and can't be named `lessons` (lesson ids are `<scope>/lessons/<topic>`). The index is generated from front matter, never committed.
 
 `OWNERS.yaml` is our format; GitHub doesn't read it, and there is no `CODEOWNERS` for these folders (§6.4). Owners are matched by **numeric user id**: a login can be renamed and re-registered. The login is there for display and mentions; `check.yml` verifies that it still resolves to the id.
 
@@ -572,7 +572,7 @@ https://open-macaron.github.io/knowledge/v1/
 └── repos/<owner>/<repo>.json    each: the folder's overview, rules and lessons, full text
 ```
 
-One file per folder, not pre-merged: which project a repository belongs to is open-macaron/config's, not the knowledge repository's. The controller fetches `global`, the repo's project and the repo (ETag-cached, versioned by commit) and merges them, instead of cloning. Everything is public already; anyone can see what the bot enforces on a repository. Shapes: `KnowledgeIndex` and `KnowledgeSlice` in `@open-macaron/contracts`.
+One file per folder, not pre-merged: which project folder a repository reads is open-macaron/config's (`knowledge`), not the knowledge repository's. The controller fetches `global`, the repo's project folder and the repo (ETag-cached, versioned by commit) and merges them, instead of cloning. Everything is public already; anyone can see what the bot enforces on a repository. Shapes: `KnowledgeIndex` and `KnowledgeSlice` in `@open-macaron/contracts`.
 
 ### 6.6 Gathering lessons
 
@@ -593,14 +593,14 @@ Users' own LLM keys (who pays for a run, on which endpoint, under which cap) are
 | Malicious media (huge files, disguised types, HTML/SVG) | Allow-list by magic bytes (no SVG or HTML), size and count caps, served by GitHub (user-attachments, uploaded against the bot's fork) rather than our host; the controller never decodes media |
 | Forged authorship | The Publisher creates the commit itself (bot author, signed) from the diff |
 | Fork CI with our pushes | Actions disabled on every fork by the controller, checked again at every boot and configuration change |
-| A configuration points a repository at another of the bot's repositories (another project's fork, `macaron-bot/knowledge`) | The configuration can't name a fork: the controller forks, and accepts a fork only if the bot owns it and it belongs to the upstream's fork network, matched by repository id (`ForkRegistry`) |
+| A configuration points a repository at another of the bot's repositories (another org's fork, `macaron-bot/knowledge`) | The configuration can't name a fork: the controller forks, and accepts a fork only if the bot owns it and it belongs to the upstream's fork network, matched by repository id, and an upstream only if its owner is the org's account id (`ForkRegistry`) |
 | Forged webhooks or bootstrap calls | HMAC on webhooks; OIDC signature and claims checked on bootstrap; the edge only exposes `/v1/webhook`, `/v1/bootstrap` and three exact `/llm/anthropic/v1/…` routes to them, plus `/api/auth/*` (sign-in); every other path goes to the web app, which holds no credential |
 | Someone triggers the bot without being allowed | A mention counts only from an account (by immutable GitHub id) or a review bot listed in open-macaron/config; the run's mode needs a capability the account holds (`requiredCapability`), checked at launch for commands, retries and escalations alike |
 | Someone uninvited gets an account, or a user raises their own rights | Sign-in is GitHub only; a new account needs a pending invitation for its immutable GitHub id (or to be an operator's admin), checked on GitHub's raw profile; the GitHub id, login and role can't be set by any request; capabilities change only through admin routes, each audited |
 | A user's LLM key leaks from the database or a backup | Sealed with AES-256-GCM under a key-encryption key that lives only in the Secret `macaron-llm-kek`, mounted as files in the controller (never an environment variable, never in Postgres or its dumps); the additional data binds each ciphertext to its user and endpoint, so a row moved to another user doesn't open; `rotate-llm-keys` re-seals under a new version. Residual risk, stated on the key page: whoever can read the namespace's Secrets can decrypt |
 | A user's LLM key is read back or sent elsewhere | Write-only: the API returns the endpoint and the last 4 characters, the form field is `_key` (never sent back by SvelteKit); keys go only to an admin-approved https endpoint whose host resolves to public addresses (checked at approval and at each save), no redirect followed; a base URL never changes |
 | A stolen session saves or deletes a key | Saving or deleting needs a sign-in younger than 10 minutes; 5 attempts per user and hour, serialised per user in Postgres; every attempt is in the user's append-only key history |
-| A session is stolen or replayed | `__Secure-`, httpOnly, SameSite=Lax cookies, 7-day sessions; GitHub's OAuth tokens are never stored and no IP address is kept; `/v1/me`, `/v1/admin` and `/v1/projects` aren't routed by the edge, only the web app reaches them, forwarding the session cookie alone |
+| A session is stolen or replayed | `__Secure-`, httpOnly, SameSite=Lax cookies, 7-day sessions; GitHub's OAuth tokens are never stored and no IP address is kept; `/v1/me`, `/v1/admin` and `/v1/orgs` aren't routed by the edge, only the web app reaches them, forwarding the session cookie alone |
 
 Self-hosted runners next to the controller are deliberately not used. The machine holding every credential must never run agent code; throwaway GitHub VMs isolate it for free.
 

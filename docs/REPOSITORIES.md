@@ -9,7 +9,7 @@ The org [`open-macaron`](https://github.com/open-macaron) owns all of our reposi
 ┌───────────────────────────────────────────────────────────────────────────────────────────┐
 │ macaron      controller + contracts + agent-cli + review + CLIs + deploy + docs           │──release──▶ ghcr.io/open-macaron/controller
 │              CI, release.yml (changesets: image, CLIs, attestations)                      │             CLI bundles (GitHub releases)
-│ config       trust config; project owners approve, merge.yml merges; Pages snapshot       │──Pages──▶ controller (CONFIG_URL); ◀─ onboarding comments (GH_ORG)
+│ config       trust config; org owners approve, merge.yml merges; Pages snapshot           │──Pages──▶ controller (CONFIG_URL); ◀─ onboarding comments (GH_ORG)
 │ runner       run.yml + environments/ — where agents execute                               │◀─ start / cancel runs (GH_ORG), artifacts (GH_INTERACT)
 │ knowledge    rules + lessons; folder owners approve, merge.yml merges; Pages read API     │◀─ PR from macaron-bot/knowledge (GH_ORG)
 │ .github      LICENSE and README (org profile and community health files to add)           │
@@ -30,7 +30,7 @@ The org [`open-macaron`](https://github.com/open-macaron) owns all of our reposi
 | Repo | Contents | Who writes | Why separate |
 |---|---|---|---|
 | `open-macaron/macaron` (this repo) | `packages/controller`, `packages/{contracts,agent-cli,review,owners,knowledge-cli,config-cli}`, `deploy/`, `docs/` | Humans via PR | Source of truth for code. Releases through changesets; the controller rolls out from its ImageStream |
-| `open-macaron/config` | `global.yaml`, `projects/<p>/project.yaml`, `projects/<p>/repos/<r>.yaml`, each project folder with `OWNERS.yaml` | Humans via PR, from forks. Project owners approve (no write access needed); `merge.yml` merges; the platform team merges `global.yaml` and reserved settings (budgets, runners) by hand | Trust config changes on its own cadence and goes live without a deploy: Pages publishes a snapshot the controller reloads on the deployment's webhook (DEPLOYMENT.md §6) |
+| `open-macaron/config` | `global.yaml`, `orgs/<org>/org.yaml`, each org folder with `OWNERS.yaml` | Humans via PR, from forks. Org owners approve (no write access needed); `merge.yml` merges; the platform team merges `global.yaml`, new org files and reserved settings (account id, fallback, budgets, runners) by hand | Trust config changes on its own cadence and goes live without a deploy: Pages publishes a snapshot the controller reloads on the deployment's webhook (DEPLOYMENT.md §6) |
 | `open-macaron/runner` | `.github/workflows/run.yml` (the only workflow), `environments/` (shared: `generic`, `podman-desktop`, `podman-desktop-extensions`; own environments would go in `repos/<o>/<r>/`), plus a `README` describing the contract (SCALING.md §1) | Humans via PR; the bot only *dispatches* | Gives agent runs their own `repository_id` (the OIDC check pins it) and their own public run history. The token that dispatches runs can't trigger `macaron`'s `release.yml` |
 | `open-macaron/knowledge` | `global/`, `projects/<p>/`, `repos/<owner>/<repo>/`, each with `OWNERS.yaml`, `rules/`, `lessons/` (DESIGN.md §6) | Humans write rules; the bot proposes lessons from its fork. Folder owners approve (no write access needed); `merge.yml` merges | High-churn, bot-authored content stays out of the code repo. Knowledge is versioned independently of controller releases |
 | `open-macaron/.github` | `LICENSE` and `README.md` today; the org profile and default community health files (SECURITY.md, CONTRIBUTING.md) belong here | Humans | GitHub convention |
@@ -82,12 +82,14 @@ A maintainer checks the upstream first:
 - it is public (DESIGN.md "Everything is public");
 - its contribution rules: DCO, a CLA to sign once for macaron-bot, interaction limits.
 
-Then onboarding is one pull request to open-macaron/config, `projects/<p>/repos/<name>.yaml` with the upstream's `repo:` and no fork. The controller owns the forks: a configuration can't name one, so it can't point a repository at another of the bot's repositories.
+Then onboarding is one pull request to open-macaron/config: an entry `repos.<name>` in `orgs/<org>/org.yaml`, with no fork. A new organisation is a new org file, with its GitHub account id, merged by the platform team. The controller owns the forks: a configuration can't name one, so it can't point a repository at another of the bot's repositories, and it forks only upstreams whose owner is the org's account id.
+
+An org file with a `fallback` needs no pull request for its other repositories: a repository it doesn't list is forked on its first request instead (`ForkRegistry.forRun`, from `ThreadWorker`). The request waits, queued and retried every 2 minutes, until GitHub has finished the fork; an archived, private or missing repository is refused with the reason. Forking every repository of an organisation up front would create forks nobody asked for.
 
 ```mermaid
 flowchart TD
-  PR["PR to open-macaron/config<br/>projects/&lt;p&gt;/repos/repo-a.yaml"] -->|project owners approve, merge.yml merges| PAGES[Pages publishes, controller reloads]
-  PAGES --> JOB["ensure-fork job, per configured repository<br/>(also at every boot)"]
+  PR["PR to open-macaron/config<br/>orgs/&lt;org&gt;/org.yaml, repos.repo-a"] -->|org owners approve, merge.yml merges| PAGES[Pages publishes, controller reloads]
+  PAGES --> JOB["ensure-fork job, per listed repository<br/>(also at every boot)"]
   JOB --> KNOWN{fork recorded?}
   KNOWN -- no --> FORK["fork as macaron-bot (GH_INTERACT)<br/>name: &lt;6 random chars&gt;-repo-a<br/>GitHub returns the bot's fork of the network if it has one"]
   KNOWN -- yes --> CHECK[read it back by repository id]
@@ -98,14 +100,12 @@ flowchart TD
   SECURE --> READY["recorded ready (forks table)<br/>comment on the config PR: the fork's link"]
 ```
 
-- **Until the fork is ready**, the bot refuses requests on the repository ("still being onboarded"). GitHub creates a fork asynchronously; the job retries for about an hour.
-- **The comment** goes on the merged pull request of the last commit touching the repository's file, if it merged in the last day, once. It is written with `GH_ORG` (§3).
-- **The web app's Projects page** lists every configured project and repository, a page at a time, for any signed-in user (`GET /v1/projects`), as Ready or Not ready. Not ready covers both a fork still being created and a failed onboarding: only the comment says why.
+- **Until the fork is ready**, requests on the repository wait ("the bot's fork is being created"). GitHub creates a fork asynchronously; the job retries for about an hour.
+- **The comment** goes on the merged pull request of the last commit touching the org file, if it merged in the last day, once. It is written with `GH_ORG` (§3). A fallback repository has no pull request, so no comment.
+- **The web app's Organisations page** (`/orgs`) lists every org and listed repository, a page at a time, for any signed-in user (`GET /v1/orgs`), as Ready or Not ready, and each fallback repository once its fork is ready, with a Fallback badge. Not ready covers both a fork still being created and a failed onboarding: only the comment says why.
 - **A repository that leaves the configuration keeps its fork.** Nothing deletes one.
 - **Fork networks:** GitHub allows one fork per network, so upstreams of one network (an upstream and a test fork of it) share the bot's fork.
 - **Optional:** a PR to knowledge, `repos/org-x/repo-a/overview.md`.
-
-A `fork:` key in a repository file is accepted and ignored; open-macaron/config dropped them on 2026-11-02.
 
 `macaron-bot/knowledge` is the exception: it isn't in the configuration, so `ForkRegistry` doesn't manage it. It stays a hand-made fork with Actions disabled, used only for `remember:` proposals.
 
