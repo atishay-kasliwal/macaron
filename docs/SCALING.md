@@ -95,7 +95,7 @@ A listed repository merges global → `defaults` → `repos.<name>`; a repositor
 
 The controller works with the merged `RepoConfig` (`packages/contracts/src/config.ts`): the repository's `RepoSettings` (harness, model and per-mode models, fast model, `runsOn`, platforms, draft PRs, `compact` comments, timeout, environment, commands, contribution rules, budgets, review cost, caps) plus `repo`, `org`, `orgId`, `knowledge` (resolved: the org's login when unset), `fallback` and `bots`. Who may trigger the bot isn't in the configuration: it's an account of the web app, with the capabilities an administrator granted (DESIGN.md §7). An org file with a `users` list (the former way) is refused, and so is a leftover `projects/` file.
 
-**The org is the unit we "don't work for free" for.** It has a budget and a concurrency share. Costs roll up repo → org → global in the ledger and the reports (the ledger's `org` column; rows from before orgs hold their project's name, so org budgets started from zero the month of the switch).
+**The org is the unit we "don't work for free" for.** It has a budget and a concurrency share. Costs roll up repo → org → global in the ledger and the reports (the ledger's `org` column; the migration moved rows from before orgs to their repository owner's org, so the month's spending carried over).
 
 **Who owns what:**
 - Each org folder's `OWNERS.yaml` gives its team its own folder: their approval merges it (`merge.yml` with `config-cli`, like knowledge). Adding or removing a repository entry is theirs, as long as it sets no reserved setting.

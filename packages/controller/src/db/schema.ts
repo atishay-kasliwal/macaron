@@ -191,7 +191,7 @@ export const ledger = pgTable(
     kind: ledgerKind("kind").notNull(),
     runId: uuid("run_id").references(() => runs.id, { onDelete: "restrict" }),
     repo: text("repo").notNull(),
-    /** The org file's login. Rows from before orgs hold their project's name. */
+    /** The org file's login; rows from before orgs were moved to their repository owner's (migration org_ledger). */
     org: text("org").notNull(),
     /** Configured by its org's fallback, which has a monthly budget of its own. */
     fallback: boolean("fallback").notNull().default(false),
