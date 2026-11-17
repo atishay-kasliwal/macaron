@@ -38,7 +38,7 @@ describe("a realistic configuration tree", () => {
     });
     expect(snapshot.repos.get("podman-desktop/podman-desktop")?.platforms).toEqual({});
     expect(snapshot.orgFiles.get(42176370)).toBe("orgs/axel7083/org.yaml");
-    expect(snapshot.orgs.get(129859460)?.fallback).toMatchObject({ budget: { monthUsd: 10 }, environment: { name: "generic" } });
+    expect(snapshot.orgs.get(129859460)?.fallback).toMatchObject({ environment: { name: "generic" } });
     expect(snapshot.repos.get("podman-desktop/podman-desktop")?.compact).toBe(true);
     expect(snapshot.repos.get("axel7083/podman-desktop")?.compact).toBe(false);
   });
@@ -62,7 +62,7 @@ describe("loadConfigTree", () => {
     return root;
   }
 
-  const org = (name: string, id = 1) => `org: ${name}\nid: ${String(id)}\nowners: "@o/t"\nbudget: { monthUsd: 10 }\nconcurrency: 1\n`;
+  const org = (name: string, id = 1) => `org: ${name}\nid: ${String(id)}\nowners: "@o/t"\nconcurrency: 1\n`;
 
   async function problems(files: Readonly<Record<string, string>>): Promise<readonly string[]> {
     const root = await tree({ "global.yaml": await globalYaml(), ...files });
@@ -83,7 +83,7 @@ describe("loadConfigTree", () => {
   it("reports every problem with its file, not just the first", async () => {
     const found = await problems({
       "orgs/a/org.yaml": `${org("a")}repos:\n  x: { budgets: { implement: -1 } }\n  y: { unknownKey: true }\n`,
-      "orgs/b/org.yaml": `${org("b", 2)}fallback: { budget: { monthUsd: 1 }, environment: { source: upstream } }\n`,
+      "orgs/b/org.yaml": `${org("b", 2)}fallback: { environment: { source: upstream } }\n`,
     });
 
     expect(found).toHaveLength(3);
@@ -119,7 +119,7 @@ describe("loadConfigTree", () => {
 });
 
 describe("parseConfigTree", () => {
-  const org = `org: a\nid: 1\nowners: "@o/t"\nbudget: { monthUsd: 10 }\nconcurrency: 1\n`;
+  const org = `org: a\nid: 1\nowners: "@o/t"\nconcurrency: 1\n`;
 
   function problems(files: Readonly<Record<string, string>>): readonly string[] {
     try {

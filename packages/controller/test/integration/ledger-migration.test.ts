@@ -9,7 +9,7 @@ import { z } from "zod";
 import { MIGRATIONS_FOLDER } from "../../src/db/db.module.ts";
 import { startPostgres } from "../support/postgres.ts";
 
-const ORG_LEDGER = "20261117093113_org_ledger";
+const ORG_LEDGER = "20261117095107_org_ledger";
 
 let container: StartedPostgreSqlContainer;
 let before: string;
@@ -27,10 +27,10 @@ afterAll(async () => {
   await container.stop();
 });
 
-const Row = z.object({ repo: z.string(), org: z.string(), fallback: z.boolean() });
+const Row = z.object({ repo: z.string(), org: z.string() });
 
 describe("the org_ledger migration", () => {
-  it("moves each row from its project to its repository owner's org, so budgets carry over", async () => {
+  it("moves each row from its project to its repository owner's org", async () => {
     const db = drizzle({ connection: { connectionString: container.getConnectionUri() } });
     try {
       await migrate(db, { migrationsFolder: before });
@@ -45,13 +45,13 @@ describe("the org_ledger migration", () => {
 
       await migrate(db, { migrationsFolder: MIGRATIONS_FOLDER });
 
-      const { rows } = await db.$client.query("SELECT repo, org, fallback FROM ledger ORDER BY usd_micros");
+      const { rows } = await db.$client.query("SELECT repo, org FROM ledger ORDER BY usd_micros");
       expect(z.array(Row).parse(rows)).toEqual([
-        { repo: "podman-desktop/podman-desktop", org: "podman-desktop", fallback: false },
-        { repo: "axel7083/podman-desktop", org: "axel7083", fallback: false },
-        { repo: "podman-desktop/extension-minikube", org: "podman-desktop", fallback: false },
-        { repo: "axel7083/foobar-tmp-demo", org: "axel7083", fallback: false },
-        { repo: "org-x/gone", org: "unknown", fallback: false },
+        { repo: "podman-desktop/podman-desktop", org: "podman-desktop" },
+        { repo: "axel7083/podman-desktop", org: "axel7083" },
+        { repo: "podman-desktop/extension-minikube", org: "podman-desktop" },
+        { repo: "axel7083/foobar-tmp-demo", org: "axel7083" },
+        { repo: "org-x/gone", org: "unknown" },
       ]);
     } finally {
       await db.$client.end();

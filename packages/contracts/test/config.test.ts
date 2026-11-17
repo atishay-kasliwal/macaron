@@ -26,7 +26,6 @@ const org = OrgFile.parse({
   org: "podman-desktop",
   id: 129859460,
   owners: "@open-macaron/podman-desktop",
-  budget: { monthUsd: 300 },
   concurrency: 4,
   defaults: {
     environment: { source: "shared", name: "pd-extension", params: { host: "podman-desktop/podman-desktop", hostRef: "auto" } },
@@ -64,11 +63,10 @@ describe("resolveRepoConfig", () => {
   it("takes no repository the org doesn't list, unless it has a fallback", () => {
     expect(resolveRepoConfig(global, org, RepoSlug.parse("podman-desktop/unknown"))).toBeUndefined();
 
-    const open = OrgFile.parse({ ...org, fallback: { budget: { monthUsd: 10 }, environment: { source: "shared", name: "generic", params: {} }, caps: { perRepoMonthUsd: 5 } } });
+    const open = OrgFile.parse({ ...org, fallback: { environment: { source: "shared", name: "generic", params: {} }, caps: { perRepoMonthUsd: 5 } } });
     const config = resolveRepoConfig(global, open, RepoSlug.parse("podman-desktop/unknown"));
 
     expect(config).toMatchObject({ fallback: true, environment: { source: "shared", name: "generic", params: {} }, caps: { perRepoMonthUsd: 5, perThreadUsd: 20 } });
-    expect(config).not.toHaveProperty("budget");
     // A listed repository never falls back.
     expect(resolve({}, "extension-a", open)?.fallback).toBe(false);
   });
@@ -91,8 +89,9 @@ describe("resolveRepoConfig", () => {
     expect(() => OrgFile.parse({ ...org, users: ["axel7083"] })).toThrow(/users/);
   });
 
-  it("refuses a fallback without its pooled budget", () => {
-    expect(OrgFile.safeParse({ ...org, fallback: { environment: { source: "shared", name: "generic", params: {} } } }).success).toBe(false);
+  it("has no org budget: every run is billed to its payer's key, under their own cap", () => {
+    expect(OrgFile.safeParse({ ...org, budget: { monthUsd: 10 } }).success).toBe(false);
+    expect(OrgFile.safeParse({ ...org, fallback: { budget: { monthUsd: 10 } } }).success).toBe(false);
     expect(OrgFile.parse({ ...org, fallback: false }).fallback).toBe(false);
   });
 

@@ -1,14 +1,12 @@
 # yaml-language-server: $schema=../../../../../schemas/config-org.schema.json
 #
 # podman-desktop: Podman Desktop itself, its extensions and their catalog. Repositories it doesn't
-# list run in the generic environment, on a budget of their own.
+# list run in the generic environment.
 
 org: podman-desktop
 id: 129859460
 owners: "@open-macaron/maintainers"
 bots: []
-budget:
-  monthUsd: 60.00
 concurrency: 2
 defaults:
   runsOn: ubuntu-26.04
@@ -61,8 +59,6 @@ repos:
   extension-postgresql:
     commands: { build: pnpm build, test: pnpm test:unit, lint: pnpm lint:check }
 fallback:
-  budget:
-    monthUsd: 10.00
   environment:
     source: shared
     name: generic

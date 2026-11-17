@@ -126,7 +126,7 @@ describe("RunsRepository", () => {
 
   it("closes a run once, keeps its limit reserved until settled, then writes its cost to the ledger once", async () => {
     const { thread, run } = await newRun(4);
-    const attribution = { repo: "org-x/repo-a", org: "sandbox", fallback: false };
+    const attribution = { repo: "org-x/repo-a", org: "sandbox" };
     const outcome = { status: "completed" as const, failure: null };
 
     expect([await runs.finish(run.id, outcome, new Date()), await runs.finish(run.id, outcome, new Date())]).toEqual([true, false]);
@@ -135,19 +135,6 @@ describe("RunsRepository", () => {
     expect([await runs.settle(run.id, 1_840_000, attribution, new Date()), await runs.settle(run.id, 1_840_000, attribution, new Date())]).toEqual([true, false]);
     expect(await runs.reservedMicros({ threadId: thread.id })).toBe(0);
     expect(await runs.spentOnThread(thread.id)).toBe(1_840_000);
-  });
-
-  it("counts an org's spending, and its fallback repositories' apart", async () => {
-    const since = new Date(Date.now() - 60_000);
-    const listed = await newRun(40);
-    const fallback = await newRun(41);
-    const other = await newRun(42);
-    await runs.settle(listed.run.id, 1_000_000, { repo: "org-f/listed", org: "org-f", fallback: false }, new Date());
-    await runs.settle(fallback.run.id, 250_000, { repo: "org-f/unlisted", org: "org-f", fallback: true }, new Date());
-    await runs.settle(other.run.id, 500_000, { repo: "org-g/unlisted", org: "org-g", fallback: true }, new Date());
-
-    expect(await runs.spentOnOrgSince("org-f", since)).toBe(1_250_000);
-    expect(await runs.spentOnFallbackSince("org-f", since)).toBe(250_000);
   });
 
   it("performs an external effect at most once", async () => {

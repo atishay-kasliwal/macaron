@@ -7,7 +7,7 @@ import { z } from "zod";
  * counts, and what it may spend or run on. In org.yaml at the top level, under `defaults` and under
  * each `repos.<r>`; adding or removing a repository without them is the owners' call.
  */
-const RESERVED: readonly string[] = ["bots", "budget", "concurrency", "budgets", "caps", "reviewCost", "runsOn", "platforms"];
+const RESERVED: readonly string[] = ["bots", "concurrency", "budgets", "caps", "reviewCost", "runsOn", "platforms"];
 
 /**
  * Top-level keys reserved as a whole: which account the file trusts, and the fallback, which

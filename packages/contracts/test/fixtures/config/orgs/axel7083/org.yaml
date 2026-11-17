@@ -5,8 +5,6 @@
 org: axel7083
 id: 42176370
 owners: "@open-macaron/maintainers"
-budget:
-  monthUsd: 50.00
 concurrency: 1
 defaults:
   runsOn: ubuntu-26.04

@@ -23,20 +23,6 @@
         "pattern": "^(?!-)[A-Za-z0-9-]{1,39}(?<!-)(\\[bot\\])?$"
       }
     },
-    "budget": {
-      "type": "object",
-      "properties": {
-        "monthUsd": {
-          "type": "number",
-          "minimum": 0,
-          "maximum": 1000
-        }
-      },
-      "required": [
-        "monthUsd"
-      ],
-      "additionalProperties": false
-    },
     "concurrency": {
       "type": "integer",
       "minimum": 1,
@@ -780,25 +766,8 @@
               "type": "string",
               "maxLength": 64,
               "pattern": "^[a-z0-9]+(-[a-z0-9]+)*$"
-            },
-            "budget": {
-              "type": "object",
-              "properties": {
-                "monthUsd": {
-                  "type": "number",
-                  "minimum": 0,
-                  "maximum": 1000
-                }
-              },
-              "required": [
-                "monthUsd"
-              ],
-              "additionalProperties": false
             }
           },
-          "required": [
-            "budget"
-          ],
           "additionalProperties": false
         }
       ]
@@ -808,7 +777,6 @@
     "org",
     "id",
     "owners",
-    "budget",
     "concurrency"
   ],
   "additionalProperties": false

@@ -14,7 +14,6 @@ export interface LedgerAttribution {
   readonly repo: string;
   /** The org file's login. */
   readonly org: string;
-  readonly fallback: boolean;
 }
 
 export type ThreadRecord = typeof threads.$inferSelect;
@@ -208,19 +207,6 @@ export class RunsRepository {
     return row?.total ?? 0;
   }
 
-  async spentOnOrgSince(org: string, since: Date): Promise<UsdMicros> {
-    const [row] = await this.db.select({ total: sumMicros }).from(ledger).where(and(eq(ledger.org, org), gte(ledger.at, since)));
-    return row?.total ?? 0;
-  }
-
-  /** What the repositories only `org`'s fallback configures spent together since `since`. */
-  async spentOnFallbackSince(org: string, since: Date): Promise<UsdMicros> {
-    const [row] = await this.db
-      .select({ total: sumMicros })
-      .from(ledger)
-      .where(and(eq(ledger.org, org), eq(ledger.fallback, true), gte(ledger.at, since)));
-    return row?.total ?? 0;
-  }
 
   /** What was billed to `payerId`'s key since `since`: settled runs only. */
   async spentByPayerSince(payerId: string, since: Date): Promise<UsdMicros> {

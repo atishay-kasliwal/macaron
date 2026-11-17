@@ -56,7 +56,7 @@ open-macaron/config
 └── orgs/
     ├── podman-desktop/
     │   ├── OWNERS.yaml            who approves changes in this folder
-    │   └── org.yaml               account id, review bots, monthly budget, concurrency,
+    │   └── org.yaml               account id, review bots, concurrency,
     │                              defaults (environment: podman-desktop-extensions),
     │                              repos: { podman-desktop: …, extension-minikube: … }, fallback
     ├── redhat-developer/…
@@ -69,7 +69,6 @@ org: podman-desktop
 id: 129859460                                   # the account id: the controller follows a rename by it
 owners: "@open-macaron/maintainers"             # the owning team; approvals come from OWNERS.yaml
 bots: []                                        # review bots whose comments on the bot's PRs count
-budget: { monthUsd: 60.00 }                     # every repository of the org, listed or not
 concurrency: 2
 defaults:
   runsOn: ubuntu-26.04
@@ -84,22 +83,21 @@ repos:
   extension-minikube:                           # inherits the defaults' environment
     commands: { build: pnpm build, test: pnpm test, lint: pnpm lint:check }
 fallback:                                       # every repository of the org it doesn't list; false (the default): none
-  budget: { monthUsd: 10.00 }                   # pooled by those repositories, on top of the org's
   environment: { source: shared, name: generic, params: {} }
   caps: { perRepoMonthUsd: 5.00 }
 ```
 
-A listed repository merges global → `defaults` → `repos.<name>`; a repository of the org it doesn't list merges global → `defaults` → `fallback`, or isn't trusted when `fallback` is `false`. The fallback lets an organisation open the bot to all its repositories without listing each one: they run in the generic environment, on a pooled monthly budget of their own on top of the org's, each still under `caps.perRepoMonthUsd`. Such a repository is forked on its first request, not when the configuration goes live (§5).
+A listed repository merges global → `defaults` → `repos.<name>`; a repository of the org it doesn't list merges global → `defaults` → `fallback`, or isn't trusted when `fallback` is `false`. The fallback lets an organisation open the bot to all its repositories without listing each one: they run in the generic environment, each under `caps.perRepoMonthUsd`. Such a repository is forked on its first request, not when the configuration goes live (§5).
 
 `org` is the login when the file was written; `id` is what the controller trusts. On every configuration it applies, it looks up each id's current login (`GET /user/{id}`, `OwnerLogins`) and matches repositories under that login only, so a renamed organisation keeps its configuration and its old name, which anyone could register, gets nothing. A failed lookup keeps the file's login. `ForkRegistry` also refuses an upstream whose owner isn't the org's id.
 
 The controller works with the merged `RepoConfig` (`packages/contracts/src/config.ts`): the repository's `RepoSettings` (harness, model and per-mode models, fast model, `runsOn`, platforms, draft PRs, `compact` comments, timeout, environment, commands, contribution rules, budgets, review cost, caps) plus `repo`, `org`, `orgId`, `knowledge` (resolved: the org's login when unset), `fallback` and `bots`. Who may trigger the bot isn't in the configuration: it's an account of the web app, with the capabilities an administrator granted (DESIGN.md §7). An org file with a `users` list (the former way) is refused, and so is a leftover `projects/` file.
 
-**The org is the unit we "don't work for free" for.** It has a budget and a concurrency share. Costs roll up repo → org → global in the ledger and the reports (the ledger's `org` column; the migration moved rows from before orgs to their repository owner's org, so the month's spending carried over).
+**Every run is paid by whoever asked for it**, with their own LLM key, under the monthly cap they set (USER-KEYS.md): there is no org budget, since an org's spending is its users' money. What the configuration bounds is per repository and per thread (`caps`), whoever pays. The ledger records each row's org for reports (the `org` column; the migration moved rows from before orgs to their repository owner's org).
 
 **Who owns what:**
 - Each org folder's `OWNERS.yaml` gives its team its own folder: their approval merges it (`merge.yml` with `config-cli`, like knowledge). Adding or removing a repository entry is theirs, as long as it sets no reserved setting.
-- The platform team owns `global.yaml`, new org files, and merges by hand any change to who an org file is or what it may spend or run on: `id`, `fallback`, `bots`, `budget`, `concurrency`, and `budgets`, `caps`, `reviewCost`, `runsOn`, `platforms` at the top level, under `defaults` or under a repository entry. `config-cli` detects them and leaves such PRs to it.
+- The platform team owns `global.yaml`, new org files, and merges by hand any change to who an org file is or what it may spend or run on: `id`, `fallback`, `bots`, `concurrency`, and `budgets`, `caps`, `reviewCost`, `runsOn`, `platforms` at the top level, under `defaults` or under a repository entry. `config-cli` detects them and leaves such PRs to it.
 
 ## 3. Knowledge follows the same hierarchy
 
@@ -145,7 +143,7 @@ The platform team only reviews money and trust. Everything else is owned by the 
 |---|---|---|
 | **Reviewer attention** | The real bottleneck: humans review ~a few bot PRs per day per repo | WIP limit per repo (max open bot PRs, default 3). New `implement` requests queue with a visible position in the status comment |
 | Actions concurrency | Per org plan (e.g. 20 jobs; macOS lower). Windows jobs also start and set up more slowly (a Podman machine takes minutes) | Controller queue with global and per-org shares, fair scheduling across orgs, interactive (`triage`) before batch (`implement`) |
-| LLM spend (Bifrost) | Bounded by keys and budgets | Per-org monthly budgets, and a pooled one for an org's fallback repositories; the Router keeps chit-chat at ~$0.001 |
+| LLM spend (Bifrost) | Bounded by keys and budgets | Each user's monthly cap on their own key, per-repository and per-thread caps; the Router keeps chit-chat at ~$0.001 |
 | GitHub API rate limits | 5,000 req/h per token | Conditional requests (304s are free), ETag caches, batched GraphQL for thread snapshots. About 50 calls per loop means roughly 100 loops/h per token before it matters |
 | Controller | One replica on OpenShift | Stateless besides Postgres; a second instance is possible because pg-boss and the migration lock coordinate through Postgres. Unlikely to be needed before ~1,000 loops/day |
 | One bot identity | All orgs share `macaron-bot` | Later, an org can bring its own identity (`<org>-bot`) with its own tokens; `RepoConfig` gains an `identity` field and the GitHub clients become per-identity |

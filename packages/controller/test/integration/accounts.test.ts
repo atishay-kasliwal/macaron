@@ -300,7 +300,7 @@ describe("UsageService", () => {
         payerId: admin.id,
       });
       await db.update(runsTable).set({ createdAt: new Date(`2026-10-0${String(n)}T00:00:00Z`) }).where(eq(runsTable.id, run.id));
-      if (n !== 3) await runs.settle(run.id, 250_000 * n, { repo: "org-x/repo-a", org: "x", fallback: false }, clock.now(), 1_000_000 * n);
+      if (n !== 3) await runs.settle(run.id, 250_000 * n, { repo: "org-x/repo-a", org: "x" }, clock.now(), 1_000_000 * n);
     }
     const usage = new UsageService(db, clock);
     const first = await usage.page(102, 2, undefined);

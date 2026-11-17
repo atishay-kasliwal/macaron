@@ -1,7 +1,7 @@
 {
   "version": "8",
   "dialect": "postgres",
-  "id": "8b48e12e-b91a-4fde-9b94-9e763a3e7114",
+  "id": "bd270891-f836-48a4-b603-96c2d60d96b4",
   "prevIds": [
     "a58e1288-30e3-49e4-b525-07e43411751f"
   ],
@@ -997,19 +997,6 @@
       "generated": null,
       "identity": null,
       "name": "org",
-      "entityType": "columns",
-      "schema": "public",
-      "table": "ledger"
-    },
-    {
-      "type": "boolean",
-      "typeSchema": null,
-      "notNull": true,
-      "dimensions": 0,
-      "default": "false",
-      "generated": null,
-      "identity": null,
-      "name": "fallback",
       "entityType": "columns",
       "schema": "public",
       "table": "ledger"

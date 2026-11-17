@@ -285,7 +285,7 @@ export class RunLauncher {
     }
     const thread = await this.runs.threadById(run.threadId);
     const config = this.config.repo(thread.repo);
-    const attribution = config === undefined ? { repo: thread.repo, org: "unknown", fallback: false } : this.attribution(config);
+    const attribution = config === undefined ? { repo: thread.repo, org: "unknown" } : this.attribution(config);
     // Read before the key is revoked: every run's tokens are kept, a free one's being all it shows.
     const tokens = key === undefined ? undefined : await this.budget.tokenUsage(key);
     if (await this.runs.settle(run.id, decision.costMicros, attribution, now, tokens?.used ?? null)) {
@@ -343,13 +343,6 @@ export class RunLauncher {
     const repoCommitted = (await this.runs.spentOnRepoSince(thread.repo, monthStart(now))) + (await this.runs.reservedMicros({ repo: thread.repo }));
     if (repoCommitted + limit > toMicros(caps.perRepoMonthUsd)) return refused("this repository reached its monthly budget");
 
-    const org = this.config.snapshot.orgs.get(config.orgId);
-    if (org !== undefined && (await this.runs.spentOnOrgSince(org.org, monthStart(now))) + limit > toMicros(org.budget.monthUsd)) {
-      return refused("this organisation reached its monthly budget");
-    }
-    if (config.fallback && org !== undefined && org.fallback !== false && (await this.runs.spentOnFallbackSince(org.org, monthStart(now))) + limit > toMicros(org.fallback.budget.monthUsd)) {
-      return refused("the repositories this organisation doesn't list reached their monthly budget");
-    }
     const overCap = await this.caps.refusal(asker.userId, limit, `${this.env.PUBLIC_URL}/settings/key`);
     if (overCap !== undefined) return refused(overCap);
     if ((await this.runs.activeCount()) >= this.config.snapshot.global.concurrency.global) {
@@ -388,6 +381,6 @@ export class RunLauncher {
   }
 
   private attribution(config: RepoConfig): LedgerAttribution {
-    return { repo: config.repo, org: config.org, fallback: config.fallback };
+    return { repo: config.repo, org: config.org };
   }
 }

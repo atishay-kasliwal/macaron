@@ -146,14 +146,11 @@ const TeamRef = z.string().regex(/^@[A-Za-z0-9-]+\/[A-Za-z0-9-]+$/);
 /** A repository's name within its owner, as GitHub allows it. */
 export const RepoName = z.string().regex(/^[A-Za-z0-9._-]{1,100}$/, "not a repository name");
 
-/** What the repositories an org doesn't list get: any repository setting, and a monthly budget they share. */
-export const OrgFallback = RepoSettingsPatch.extend({ budget: z.strictObject({ monthUsd: Usd }) });
-export type OrgFallback = z.infer<typeof OrgFallback>;
-
 /**
  * `config/orgs/<org>/org.yaml`: a GitHub owner (an organisation or a user) and its repositories.
  * `id` is the owner's account id: the controller follows a rename by it, `org` is only its login
  * when the file was written. Without a `fallback`, the bot works on the listed repositories only.
+ * There is no org budget: every run is billed to its payer's own key, under their monthly cap.
  */
 export const OrgFile = z.strictObject({
   org: GitHubLogin,
@@ -161,11 +158,11 @@ export const OrgFile = z.strictObject({
   owners: TeamRef,
   /** Review bots whose comments on the bot's pull requests count, for review loops only. */
   bots: z.array(GitHubLogin).default([]),
-  budget: z.strictObject({ monthUsd: Usd }),
   concurrency: z.int().min(1).max(50),
   defaults: RepoSettingsPatch.default({}),
   repos: z.record(RepoName, RepoSettingsPatch).default({}),
-  fallback: z.union([z.literal(false), OrgFallback]).default(false),
+  /** What the repositories it doesn't list get: any repository setting. */
+  fallback: z.union([z.literal(false), RepoSettingsPatch]).default(false),
 });
 export type OrgFile = z.infer<typeof OrgFile>;
 
@@ -201,8 +198,7 @@ export function repoSettingsOf(global: GlobalFile, org: OrgFile, name: string): 
   const listed = Object.entries(org.repos).find(([candidate]) => candidate.toLowerCase() === name.toLowerCase());
   if (listed !== undefined) return { settings: applySettingsPatch(base, listed[1]), fallback: false };
   if (org.fallback === false) return undefined;
-  const { budget: _pooled, ...patch } = org.fallback;
-  return { settings: applySettingsPatch(base, patch), fallback: true };
+  return { settings: applySettingsPatch(base, org.fallback), fallback: true };
 }
 
 /** What the org's fallback gives every repository it doesn't list; undefined without a fallback. */
